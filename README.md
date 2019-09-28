@@ -4,7 +4,7 @@
 
 This component is a straightfoward fork of the mainline `generic_thermostat`. 
 
-## Installation (HACS) - Highly Recommended
+## Installation (HACS) - Recommended
 0. Have [HACS](https://custom-components.github.io/hacs/installation/manual/) installed, this will allow you to easily update
 1. Add `https://github.com/zacs/ha-dualmodegeneric` as a [custom repository](https://custom-components.github.io/hacs/usage/settings/#add-custom-repositories) as Type: Integration
 2. Click install under "Dual Mode Generic Thermostat", restart your instance.
@@ -34,13 +34,16 @@ The component shares the same configuration variables as the standard `generic_t
 
 Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/components/generic_thermostat/) for details on the rest of the variables. This component doesn't change their functionality.
 
-By default, the component will restore the last state of the thermostat prior to a restart. 
-
 ## Behavior
 
 * The thermostat will follow standard mode-based behavior: if set to "cool," the only switch which can be activated is the `cooler`. This means if the target temperature is higher than the actual temperateure, the `heater` will _not_ start. Vice versa is also true. 
 
 * Keepalive logic has been updated to be aware of the mode in current use, so should function as expected. 
+
+* By default, the component will restore the last state of the thermostat prior to a restart. 
+
+* While `heater`/`cooler` are documented to be `switch`es, they can also be `input_boolean`s if necessary. 
+
 
 ## Reporting an Issue
 1. Setup your logger to print debug messages for this component using:
