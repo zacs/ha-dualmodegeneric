@@ -290,7 +290,9 @@ class GenericThermostat(ClimateDevice, RestoreEntity):
             return CURRENT_HVAC_IDLE
         if self._hvac_mode == HVAC_MODE_COOL:
             return CURRENT_HVAC_COOL
-        return CURRENT_HVAC_HEAT
+        if self._hvac_mode == HVAC_MODE_HEAT:
+            return CURRENT_HVAC_HEAT
+        return CURRENT_HVAC_IDLE
 
     @property
     def target_temperature(self):
@@ -320,9 +322,13 @@ class GenericThermostat(ClimateDevice, RestoreEntity):
         """Set hvac mode."""
         if hvac_mode == HVAC_MODE_HEAT:
             self._hvac_mode = HVAC_MODE_HEAT
+            if self._is_device_active:
+                await self._async_cooler_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_COOL:
             self._hvac_mode = HVAC_MODE_COOL
+            if self._is_device_active:
+                await self._async_heater_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_OFF:
             self._hvac_mode = HVAC_MODE_OFF
