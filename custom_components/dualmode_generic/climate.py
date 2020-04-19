@@ -55,6 +55,7 @@ DEFAULT_NAME = "Generic Thermostat"
 
 CONF_HEATER = "heater"
 CONF_COOLER = "cooler"
+CONF_REVERSE_CYCLE = "reverse_cycle"
 CONF_SENSOR = "target_sensor"
 CONF_MIN_TEMP = "min_temp"
 CONF_MAX_TEMP = "max_temp"
@@ -77,6 +78,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_MIN_DUR): vol.All(cv.time_period, cv.positive_timedelta),
         vol.Optional(CONF_MIN_TEMP): vol.Coerce(float),
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+        vol.Optional(CONF_REVERSE_CYCLE): cv.boolean,
         vol.Optional(CONF_COLD_TOLERANCE, default=DEFAULT_TOLERANCE): vol.Coerce(float),
         vol.Optional(CONF_HOT_TOLERANCE, default=DEFAULT_TOLERANCE): vol.Coerce(float),
         vol.Optional(CONF_TARGET_TEMP): vol.Coerce(float),
@@ -98,6 +100,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     heater_entity_id = config.get(CONF_HEATER)
     cooler_entity_id = config.get(CONF_COOLER)
     sensor_entity_id = config.get(CONF_SENSOR)
+    reverse_cycle = config.get(CONF_REVERSE_CYCLE)
     min_temp = config.get(CONF_MIN_TEMP)
     max_temp = config.get(CONF_MAX_TEMP)
     target_temp = config.get(CONF_TARGET_TEMP)
@@ -117,6 +120,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 heater_entity_id,
                 cooler_entity_id,
                 sensor_entity_id,
+                reverse_cycle,
                 min_temp,
                 max_temp,
                 target_temp,
@@ -137,28 +141,30 @@ class GenericThermostat(ClimateDevice, RestoreEntity):
     """Representation of a Generic Thermostat device."""
 
     def __init__(
-        self,
-        name,
-        heater_entity_id,
-        cooler_entity_id,
-        sensor_entity_id,
-        min_temp,
-        max_temp,
-        target_temp,
-        min_cycle_duration,
-        cold_tolerance,
-        hot_tolerance,
-        keep_alive,
-        initial_hvac_mode,
-        away_temp,
-        precision,
-        unit,
+            self,
+            name,
+            heater_entity_id,
+            cooler_entity_id,
+            sensor_entity_id,
+            reverse_cycle,
+            min_temp,
+            max_temp,
+            target_temp,
+            min_cycle_duration,
+            cold_tolerance,
+            hot_tolerance,
+            keep_alive,
+            initial_hvac_mode,
+            away_temp,
+            precision,
+            unit,
     ):
         """Initialize the thermostat."""
         self._name = name
         self.heater_entity_id = heater_entity_id
         self.cooler_entity_id = cooler_entity_id
         self.sensor_entity_id = sensor_entity_id
+        self.reverse_cycle = reverse_cycle
         self.min_cycle_duration = min_cycle_duration
         self._cold_tolerance = cold_tolerance
         self._hot_tolerance = hot_tolerance
@@ -322,12 +328,12 @@ class GenericThermostat(ClimateDevice, RestoreEntity):
         """Set hvac mode."""
         if hvac_mode == HVAC_MODE_HEAT:
             self._hvac_mode = HVAC_MODE_HEAT
-            if self._is_device_active:
+            if self._is_device_active and not self.reverse_cycle:
                 await self._async_cooler_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_COOL:
             self._hvac_mode = HVAC_MODE_COOL
-            if self._is_device_active:
+            if self._is_device_active and not self.reverse_cycle:
                 await self._async_heater_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_OFF:
@@ -413,13 +419,15 @@ class GenericThermostat(ClimateDevice, RestoreEntity):
                 # If the `time` argument is not none, we were invoked for
                 # keep-alive purposes, and `min_cycle_duration` is irrelevant.
                 if self.min_cycle_duration:
+                    entity = self.cooler_entity_id if self._hvac_mode == HVAC_MODE_COOL else self.heater_entity_id
+
                     if self._is_device_active:
                         current_state = STATE_ON
                     else:
                         current_state = HVAC_MODE_OFF
                     long_enough = condition.state(
                         self.hass,
-                        self.heater_entity_id,
+                        entity,
                         current_state,
                         self.min_cycle_duration,
                     )
