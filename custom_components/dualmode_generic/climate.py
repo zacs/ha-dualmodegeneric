@@ -441,6 +441,10 @@ class GenericThermostat(ClimateDevice, RestoreEntity):
                     await self._async_heater_turn_off()
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
+                    _LOGGER.info(
+                        "Keep-alive - Turning on heater heater %s",
+                        self.heater_entity_id if self._hvac_mode == HVAC_MODE_HEAT else self.cooler_entity_id,
+                    )
                     if self._hvac_mode == HVAC_MODE_COOL:
                         await self._async_cooler_turn_on()
                     elif self._hvac_mode == HVAC_MODE_HEAT:
@@ -454,6 +458,10 @@ class GenericThermostat(ClimateDevice, RestoreEntity):
                     await self._async_heater_turn_on()
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
+                    _LOGGER.info(
+                        "Keep-alive - Turning off heater %s",
+                        self.heater_entity_id if self._hvac_mode == HVAC_MODE_HEAT else self.cooler_entity_id,
+                    )
                     if self._hvac_mode == HVAC_MODE_COOL:
                         await self._async_cooler_turn_off()
                     elif self._hvac_mode == HVAC_MODE_HEAT:
