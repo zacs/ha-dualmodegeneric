@@ -434,8 +434,8 @@ class GenericThermostat(ClimateDevice, RestoreEntity):
                     if not long_enough:
                         return
 
-            too_cold = self._target_temp - self._cur_temp >= self._cold_tolerance
-            too_hot = self._cur_temp - self._target_temp >= self._hot_tolerance
+            too_cold = self._target_temp >= self._cur_temp + self._cold_tolerance
+            too_hot = self._cur_temp >= self._target_temp + self._hot_tolerance
             if self._is_device_active: # when to turn off
                 if too_cold and self._hvac_mode == HVAC_MODE_COOL:
                     _LOGGER.info("Turning off cooler %s", self.cooler_entity_id)
