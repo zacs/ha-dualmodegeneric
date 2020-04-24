@@ -405,7 +405,7 @@ class GenericThermostat(ClimateDevice, RestoreEntity):
                 self._active = True
                 _LOGGER.info(
                     "Obtained current and target temperature. "
-                    "Generic thermostat active. %s, %s",
+                    "Generic Dual-mode thermostat active. %s, %s",
                     self._cur_temp,
                     self._target_temp,
                 )
