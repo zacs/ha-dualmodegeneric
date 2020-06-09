@@ -472,13 +472,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 if too_cold and self._hvac_mode == HVAC_MODE_COOL:
                     _LOGGER.info("Turning off cooler %s", self.cooler_entity_id)
                     await self._async_cooler_turn_off()
-                if too_hot and self._hvac_mode == HVAC_MODE_HEAT:
+                elif too_hot and self._hvac_mode == HVAC_MODE_HEAT:
                     _LOGGER.info("Turning off heater %s", self.heater_entity_id)
                     await self._async_heater_turn_off()
-                if too_cold and self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                elif too_cold and self._hvac_mode == HVAC_MODE_FAN_ONLY:
                     _LOGGER.info("Turning off fan %s", self.ventilator_entity_id)
                     await self._async_fan_turn_off()
-                if time is not None:
+                elif time is not None:
                     # The time argument is passed only in keep-alive case
                     _LOGGER.info(
                         "Keep-alive - Turning on heater heater %s",
@@ -494,13 +494,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 if too_hot and self._hvac_mode == HVAC_MODE_COOL:
                     _LOGGER.info("Turning on cooler %s", self.cooler_entity_id)
                     await self._async_cooler_turn_on()
-                if too_cold and self._hvac_mode == HVAC_MODE_HEAT:
+                elif too_cold and self._hvac_mode == HVAC_MODE_HEAT:
                     _LOGGER.info("Turning on heater %s", self.heater_entity_id)
                     await self._async_heater_turn_on()
-                if too_hot and self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                elif too_hot and self._hvac_mode == HVAC_MODE_FAN_ONLY:
                     _LOGGER.info("Turning on fan %s", self.cooler_entity_id)
                     await self._async_fan_turn_on()
-                if time is not None:
+                elif time is not None:
                     # The time argument is passed only in keep-alive case
                     _LOGGER.info(
                         "Keep-alive - Turning off heater %s",
@@ -516,10 +516,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
     @property
     def _is_device_active(self):
         """If the toggleable device is currently active."""
-        device_state_list = []
-
-        device_state_list.append(self.hass.states.is_state(self.heater_entity_id, STATE_ON))
-        device_state_list.append(self.hass.states.is_state(self.cooler_entity_id, STATE_ON))
+        device_state_list = [self.hass.states.is_state(self.heater_entity_id, STATE_ON),
+                             self.hass.states.is_state(self.cooler_entity_id, STATE_ON)]
 
         if self.ventilator_entity_id is not None:
             device_state_list.append(self.hass.states.is_state(self.ventilator_entity_id, STATE_ON))
@@ -527,6 +525,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         for state in device_state_list:
             if state:
                 return True
+        return False
 
     @property
     def supported_features(self):
