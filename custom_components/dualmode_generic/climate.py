@@ -365,6 +365,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if self._is_device_active:
                 await self._async_heater_turn_off()
                 await self._async_cooler_turn_off()
+            await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_OFF:
             self._hvac_mode = HVAC_MODE_OFF
             if self._is_device_active:
@@ -471,13 +472,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 if too_cold and self._hvac_mode == HVAC_MODE_COOL:
                     _LOGGER.info("Turning off cooler %s", self.cooler_entity_id)
                     await self._async_cooler_turn_off()
-                elif too_hot and self._hvac_mode == HVAC_MODE_HEAT:
+                if too_hot and self._hvac_mode == HVAC_MODE_HEAT:
                     _LOGGER.info("Turning off heater %s", self.heater_entity_id)
                     await self._async_heater_turn_off()
-                elif too_cold and self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                if too_cold and self._hvac_mode == HVAC_MODE_FAN_ONLY:
                     _LOGGER.info("Turning off fan %s", self.ventilator_entity_id)
-                    await  self._async_fan_turn_off()
-                elif time is not None:
+                    await self._async_fan_turn_off()
+                if time is not None:
                     # The time argument is passed only in keep-alive case
                     _LOGGER.info(
                         "Keep-alive - Turning on heater heater %s",
@@ -493,13 +494,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 if too_hot and self._hvac_mode == HVAC_MODE_COOL:
                     _LOGGER.info("Turning on cooler %s", self.cooler_entity_id)
                     await self._async_cooler_turn_on()
-                elif too_cold and self._hvac_mode == HVAC_MODE_HEAT:
+                if too_cold and self._hvac_mode == HVAC_MODE_HEAT:
                     _LOGGER.info("Turning on heater %s", self.heater_entity_id)
                     await self._async_heater_turn_on()
-                elif too_hot and self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                if too_hot and self._hvac_mode == HVAC_MODE_FAN_ONLY:
                     _LOGGER.info("Turning on fan %s", self.cooler_entity_id)
                     await self._async_fan_turn_on()
-                elif time is not None:
+                if time is not None:
                     # The time argument is passed only in keep-alive case
                     _LOGGER.info(
                         "Keep-alive - Turning off heater %s",
