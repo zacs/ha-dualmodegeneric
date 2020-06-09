@@ -509,7 +509,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 elif too_cold and self._hvac_mode == HVAC_MODE_HEAT:
                     _LOGGER.info("Turning on heater %s", self.heater_entity_id)
                     await self._async_heater_turn_on()
-                elif too_hot and self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                elif self._hvac_mode == HVAC_MODE_FAN_ONLY:
                     if too_hot and self.fan_behavior == FAN_MODE_COOL:
                         _LOGGER.info("Turning on fan %s", self.fan_entity_id)
                         await self._async_fan_turn_on()
