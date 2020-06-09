@@ -517,24 +517,15 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         """If the toggleable device is currently active."""
         device_state_list = []
 
-        cooler_state = self.hass.states.is_state(self.heater_entity_id, STATE_ON)
-        device_state_list.append(cooler_state)
-
-        heater_state = self.hass.states.is_state(self.cooler_entity_id, STATE_ON)
-        device_state_list.append(heater_state)
+        device_state_list.append(self.hass.states.is_state(self.heater_entity_id, STATE_ON))
+        device_state_list.append(self.hass.states.is_state(self.cooler_entity_id, STATE_ON))
 
         if self.ventilator_entity_id is not None:
-            ventilator_state = self.hass.states.is_state(self.ventilator_entity_id, STATE_ON)
-            device_state_list.append(ventilator_state)
+            device_state_list.append(self.hass.states.is_state(self.ventilator_entity_id, STATE_ON))
 
         for state in device_state_list:
             if state:
                 return True
-        return False
-
-        # return self.hass.states.is_state(self.heater_entity_id, STATE_ON) or \
-        #        self.hass.states.is_state(self.cooler_entity_id, STATE_ON) or \
-        #        self.hass.states.is_state(self.ventilator_entity_id, STATE_ON)
 
     @property
     def supported_features(self):
