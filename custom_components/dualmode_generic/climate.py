@@ -185,7 +185,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._hvac_mode = initial_hvac_mode
         self._saved_target_temp = target_temp or away_temp
         self._temp_precision = precision
-        self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_FAN_ONLY, HVAC_MODE_OFF]
+        self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_OFF]
+        if self.ventilator_entity_id is not None:
+            self._hvac_list.append(HVAC_MODE_FAN_ONLY)
         self._active = False
         self._cur_temp = None
         self._temp_lock = asyncio.Lock()
@@ -213,9 +215,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         async_track_state_change(
             self.hass, self.cooler_entity_id, self._async_switch_changed
         )
-        async_track_state_change(
-            self.hass, self.ventilator_entity_id, self._async_switch_changed
-        )
+        if self.ventilator_entity_id is not None:
+            async_track_state_change(
+                self.hass, self.ventilator_entity_id, self._async_switch_changed
+            )
 
         if self._keep_alive:
             async_track_time_interval(
@@ -347,13 +350,15 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._hvac_mode = HVAC_MODE_HEAT
             if self._is_device_active and not self.reverse_cycle:
                 await self._async_cooler_turn_off()
-                await self._async_fan_turn_off()
+                if self.ventilator_entity_id is not None:
+                    await self._async_fan_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_COOL:
             self._hvac_mode = HVAC_MODE_COOL
             if self._is_device_active and not self.reverse_cycle:
                 await self._async_heater_turn_off()
-                await self._async_fan_turn_off()
+                if self.ventilator_entity_id is not None:
+                    await self._async_fan_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_FAN_ONLY:
             self._hvac_mode = HVAC_MODE_FAN_ONLY
@@ -365,7 +370,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if self._is_device_active:
                 await self._async_heater_turn_off()
                 await self._async_cooler_turn_off()
-                await self._async_fan_turn_off()
+                if self.ventilator_entity_id is not None:
+                    await self._async_fan_turn_off()
         else:
             _LOGGER.error("Unrecognized hvac mode: %s", hvac_mode)
             return
@@ -469,7 +475,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                     _LOGGER.info("Turning off heater %s", self.heater_entity_id)
                     await self._async_heater_turn_off()
                 elif too_cold and self._hvac_mode == HVAC_MODE_FAN_ONLY:
-                    _LOGGER.info("Turning off fan %s", self.heater_entity_id)
+                    _LOGGER.info("Turning off fan %s", self.ventilator_entity_id)
                     await  self._async_fan_turn_off()
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
@@ -509,9 +515,26 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
     @property
     def _is_device_active(self):
         """If the toggleable device is currently active."""
-        return self.hass.states.is_state(self.heater_entity_id, STATE_ON) or \
-               self.hass.states.is_state(self.cooler_entity_id, STATE_ON) or \
-               self.hass.states.is_state(self.ventilator_entity_id, STATE_ON)
+        device_state_list = []
+
+        cooler_state = self.hass.states.is_state(self.heater_entity_id, STATE_ON)
+        device_state_list.append(cooler_state)
+
+        heater_state = self.hass.states.is_state(self.cooler_entity_id, STATE_ON)
+        device_state_list.append(heater_state)
+
+        if self.ventilator_entity_id is not None:
+            ventilator_state = self.hass.states.is_state(self.ventilator_entity_id, STATE_ON)
+            device_state_list.append(ventilator_state)
+
+        for state in device_state_list:
+            if state:
+                return True
+        return False
+
+        # return self.hass.states.is_state(self.heater_entity_id, STATE_ON) or \
+        #        self.hass.states.is_state(self.cooler_entity_id, STATE_ON) or \
+        #        self.hass.states.is_state(self.ventilator_entity_id, STATE_ON)
 
     @property
     def supported_features(self):
