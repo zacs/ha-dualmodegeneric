@@ -58,7 +58,7 @@ DEFAULT_NAME = "Generic Thermostat"
 
 CONF_HEATER = "heater"
 CONF_COOLER = "cooler"
-CONF_VENTILATOR = "ventilator"
+CONF_FAN = "fan"
 CONF_REVERSE_CYCLE = "reverse_cycle"
 CONF_SENSOR = "target_sensor"
 CONF_MIN_TEMP = "min_temp"
@@ -82,7 +82,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_HEATER): cv.entity_id,
         vol.Required(CONF_COOLER): cv.entity_id,
         vol.Required(CONF_SENSOR): cv.entity_id,
-        vol.Optional(CONF_VENTILATOR): cv.entity_id,
+        vol.Optional(CONF_FAN): cv.entity_id,
         vol.Optional(CONF_MAX_TEMP): vol.Coerce(float),
         vol.Optional(CONF_MIN_DUR): vol.All(cv.time_period, cv.positive_timedelta),
         vol.Optional(CONF_MIN_TEMP): vol.Coerce(float),
@@ -109,7 +109,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     heater_entity_id = config.get(CONF_HEATER)
     cooler_entity_id = config.get(CONF_COOLER)
     sensor_entity_id = config.get(CONF_SENSOR)
-    ventilator_entity_id = config.get(CONF_VENTILATOR)
+    fan_entity_id = config.get(CONF_FAN)
     reverse_cycle = config.get(CONF_REVERSE_CYCLE)
     min_temp = config.get(CONF_MIN_TEMP)
     max_temp = config.get(CONF_MAX_TEMP)
@@ -130,7 +130,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 heater_entity_id,
                 cooler_entity_id,
                 sensor_entity_id,
-                ventilator_entity_id,
+                fan_entity_id,
                 reverse_cycle,
                 min_temp,
                 max_temp,
@@ -157,7 +157,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             heater_entity_id,
             cooler_entity_id,
             sensor_entity_id,
-            ventilator_entity_id,
+            fan_entity_id,
             reverse_cycle,
             min_temp,
             max_temp,
@@ -176,7 +176,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.heater_entity_id = heater_entity_id
         self.cooler_entity_id = cooler_entity_id
         self.sensor_entity_id = sensor_entity_id
-        self.ventilator_entity_id = ventilator_entity_id
+        self.fan_entity_id = fan_entity_id
         self.reverse_cycle = reverse_cycle
         self.min_cycle_duration = min_cycle_duration
         self._cold_tolerance = cold_tolerance
@@ -186,7 +186,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._saved_target_temp = target_temp or away_temp
         self._temp_precision = precision
         self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_OFF]
-        if self.ventilator_entity_id is not None:
+        if self.fan_entity_id is not None:
             self._hvac_list.append(HVAC_MODE_FAN_ONLY)
         self._active = False
         self._cur_temp = None
@@ -215,9 +215,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         async_track_state_change(
             self.hass, self.cooler_entity_id, self._async_switch_changed
         )
-        if self.ventilator_entity_id is not None:
+        if self.fan_entity_id is not None:
             async_track_state_change(
-                self.hass, self.ventilator_entity_id, self._async_switch_changed
+                self.hass, self.fan_entity_id, self._async_switch_changed
             )
 
         if self._keep_alive:
@@ -350,14 +350,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._hvac_mode = HVAC_MODE_HEAT
             if self._is_device_active and not self.reverse_cycle:
                 await self._async_cooler_turn_off()
-                if self.ventilator_entity_id is not None:
+                if self.fan_entity_id is not None:
                     await self._async_fan_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_COOL:
             self._hvac_mode = HVAC_MODE_COOL
             if self._is_device_active and not self.reverse_cycle:
                 await self._async_heater_turn_off()
-                if self.ventilator_entity_id is not None:
+                if self.fan_entity_id is not None:
                     await self._async_fan_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_FAN_ONLY:
@@ -371,7 +371,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if self._is_device_active:
                 await self._async_heater_turn_off()
                 await self._async_cooler_turn_off()
-                if self.ventilator_entity_id is not None:
+                if self.fan_entity_id is not None:
                     await self._async_fan_turn_off()
         else:
             _LOGGER.error("Unrecognized hvac mode: %s", hvac_mode)
@@ -476,7 +476,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                     _LOGGER.info("Turning off heater %s", self.heater_entity_id)
                     await self._async_heater_turn_off()
                 elif too_cold and self._hvac_mode == HVAC_MODE_FAN_ONLY:
-                    _LOGGER.info("Turning off fan %s", self.ventilator_entity_id)
+                    _LOGGER.info("Turning off fan %s", self.fan_entity_id)
                     await self._async_fan_turn_off()
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
@@ -519,13 +519,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         device_state_list = [self.hass.states.is_state(self.heater_entity_id, STATE_ON),
                              self.hass.states.is_state(self.cooler_entity_id, STATE_ON)]
 
-        if self.ventilator_entity_id is not None:
-            device_state_list.append(self.hass.states.is_state(self.ventilator_entity_id, STATE_ON))
+        if self.fan_entity_id is not None:
+            device_state_list.append(self.hass.states.is_state(self.fan_entity_id, STATE_ON))
 
         for state in device_state_list:
             if state:
                 return True
-        return False
 
     @property
     def supported_features(self):
@@ -554,12 +553,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     async def _async_fan_turn_on(self):
         """Turn cooler toggleable device on."""
-        data = {ATTR_ENTITY_ID: self.ventilator_entity_id}
+        data = {ATTR_ENTITY_ID: self.fan_entity_id}
         await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_ON, data)
 
     async def _async_fan_turn_off(self):
         """Turn fan toggleable device off."""
-        data = {ATTR_ENTITY_ID: self.ventilator_entity_id}
+        data = {ATTR_ENTITY_ID: self.fan_entity_id}
         await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_OFF, data)
 
     async def async_set_preset_mode(self, preset_mode: str):
