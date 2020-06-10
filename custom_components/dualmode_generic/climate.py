@@ -280,7 +280,6 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         # Set default state to off
         if not self._hvac_mode:
             self._hvac_mode = HVAC_MODE_OFF
-        await self.async_set_temperature()
 
     @property
     def should_poll(self):
@@ -358,15 +357,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._hvac_mode = HVAC_MODE_HEAT
             if self._is_device_active and not self.reverse_cycle:
                 await self._async_cooler_turn_off()
-                if self.fan_entity_id is not None:
-                    await self._async_fan_turn_off()
+                await self._async_fan_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_COOL:
             self._hvac_mode = HVAC_MODE_COOL
             if self._is_device_active and not self.reverse_cycle:
                 await self._async_heater_turn_off()
-                if self.fan_entity_id is not None:
-                    await self._async_fan_turn_off()
+                await self._async_fan_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_FAN_ONLY:
             self._hvac_mode = HVAC_MODE_FAN_ONLY
@@ -379,8 +376,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if self._is_device_active:
                 await self._async_heater_turn_off()
                 await self._async_cooler_turn_off()
-                if self.fan_entity_id is not None:
-                    await self._async_fan_turn_off()
+                await self._async_fan_turn_off()
         else:
             _LOGGER.error("Unrecognized hvac mode: %s", hvac_mode)
             return
@@ -530,22 +526,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                         await self._async_fan_turn_off()
 
             if self.fan_behavior == FAN_MODE_NEUTRAL and self._hvac_mode == HVAC_MODE_FAN_ONLY:
-                if self.fan_entity_id is not None:
-                    await self._async_fan_turn_on()
+                await self._async_fan_turn_on()
 
     @property
     def _is_device_active(self):
         """If the toggleable device is currently active."""
-        device_state_list = [self.hass.states.is_state(self.heater_entity_id, STATE_ON),
-                             self.hass.states.is_state(self.cooler_entity_id, STATE_ON)]
-
-        if self.fan_entity_id is not None:
-            device_state_list.append(self.hass.states.is_state(self.fan_entity_id, STATE_ON))
-
-        for state in device_state_list:
-            if state:
-                return True
-        return False
+        devices = [self.heater_entity_id, self.cooler_entity_id] + ([self.fan_entity_id] if self.fan_entity_id else [])
+        device_states = [self.hass.states.is_state(dev, STATE_ON) for dev in devices]
+        return next((state for state in device_states if state), False)
 
     @property
     def supported_features(self):
@@ -574,13 +562,15 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     async def _async_fan_turn_on(self):
         """Turn cooler toggleable device on."""
-        data = {ATTR_ENTITY_ID: self.fan_entity_id}
-        await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_ON, data)
+        if self.fan_entity_id is not None:
+            data = {ATTR_ENTITY_ID: self.fan_entity_id}
+            await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_ON, data)
 
     async def _async_fan_turn_off(self):
         """Turn fan toggleable device off."""
-        data = {ATTR_ENTITY_ID: self.fan_entity_id}
-        await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_OFF, data)
+        if self.fan_entity_id is not None:
+            data = {ATTR_ENTITY_ID: self.fan_entity_id}
+            await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_OFF, data)
 
     async def async_set_preset_mode(self, preset_mode: str):
         """Set new preset mode."""
