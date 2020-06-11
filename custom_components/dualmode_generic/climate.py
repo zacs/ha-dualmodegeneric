@@ -449,13 +449,20 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if not self._active or self._hvac_mode == HVAC_MODE_OFF:
                 return
 
+            # This variable is used for the long_enough condition and for the LOG Messages
+            active_entity = None
             if not force and time is None:
                 # If the `force` argument is True, we
                 # ignore `min_cycle_duration`.
                 # If the `time` argument is not none, we were invoked for
                 # keep-alive purposes, and `min_cycle_duration` is irrelevant.
                 if self.min_cycle_duration:
-                    entity = self.cooler_entity_id if self._hvac_mode == HVAC_MODE_COOL else self.heater_entity_id
+                    if self._hvac_mode == HVAC_MODE_COOL:
+                        active_entity = self.cooler_entity_id
+                    if self._hvac_mode == HVAC_MODE_HEAT:
+                        active_entity = self.heater_entity_id
+                    if self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                        active_entity = self.fan_entity_id
 
                     if self._is_device_active:
                         current_state = STATE_ON
@@ -463,7 +470,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                         current_state = HVAC_MODE_OFF
                     long_enough = condition.state(
                         self.hass,
-                        entity,
+                        active_entity,
                         current_state,
                         self.min_cycle_duration,
                     )
@@ -489,8 +496,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
                     _LOGGER.info(
-                        "Keep-alive - Turning on heater heater %s",
-                        self.heater_entity_id if self._hvac_mode == HVAC_MODE_HEAT else self.cooler_entity_id,
+                        "Keep-alive - Turning on heater heater %s", active_entity
                     )
                     if self._hvac_mode == HVAC_MODE_COOL:
                         await self._async_cooler_turn_on()
@@ -515,8 +521,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
                     _LOGGER.info(
-                        "Keep-alive - Turning off heater %s",
-                        self.heater_entity_id if self._hvac_mode == HVAC_MODE_HEAT else self.cooler_entity_id,
+                        "Keep-alive - Turning off heater %s", active_entity
                     )
                     if self._hvac_mode == HVAC_MODE_COOL:
                         await self._async_cooler_turn_off()
