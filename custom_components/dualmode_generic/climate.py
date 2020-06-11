@@ -253,7 +253,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 if old_state.attributes.get(ATTR_TEMPERATURE) is None:
                     if self._hvac_mode == HVAC_MODE_COOL:
                         self._target_temp = self.max_temp
-                    else:
+                    if self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                        self._target_temp = self.max_temp
+                    if self._hvac_mode == HVAC_MODE_HEAT:
                         self._target_temp = self.min_temp
                     _LOGGER.warning(
                         "Undefined target temperature," "falling back to %s",
@@ -271,7 +273,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if self._target_temp is None:
                 if self._hvac_mode == HVAC_MODE_COOL:
                     self._target_temp = self.max_temp
-                else:
+                if self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                    self._target_temp = self.max_temp
+                if self._hvac_mode == HVAC_MODE_HEAT:
                     self._target_temp = self.min_temp
             _LOGGER.warning(
                 "No previously saved temperature, setting to %s", self._target_temp
