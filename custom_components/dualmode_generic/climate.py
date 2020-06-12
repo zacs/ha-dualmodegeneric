@@ -86,6 +86,11 @@ DRYER_MODE_COOL = "cooler"
 DRYER_MODE_HEAT = "heater"
 DRYER_MODE_NEUTRAL = "neutral"
 
+REVERSE_CYCLE_IS_HEATER = "heater"
+REVERSE_CYCLE_IS_COOLER = "cooler"
+REVERSE_CYCLE_IS_FAN = "fan"
+REVERSE_CYCLE_IS_DRYER = "dryer"
+
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_HEATER): cv.entity_id,
@@ -101,7 +106,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_MIN_DUR): vol.All(cv.time_period, cv.positive_timedelta),
         vol.Optional(CONF_MIN_TEMP): vol.Coerce(float),
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_REVERSE_CYCLE, default=False): cv.boolean,
+        vol.Optional(CONF_REVERSE_CYCLE, default=[]): cv.ensure_list_csv,
         vol.Optional(CONF_COLD_TOLERANCE, default=DEFAULT_TOLERANCE): vol.Coerce(float),
         vol.Optional(CONF_HOT_TOLERANCE, default=DEFAULT_TOLERANCE): vol.Coerce(float),
         vol.Optional(CONF_TARGET_TEMP): vol.Coerce(float),
@@ -390,31 +395,44 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         """Set hvac mode."""
         if hvac_mode == HVAC_MODE_HEAT:
             self._hvac_mode = HVAC_MODE_HEAT
-            if self._is_device_active and not self.reverse_cycle:
-                await self._async_cooler_turn_off()
-                await self._async_fan_turn_off()
-                await self._async_dryer_turn_off()
+            if self._is_device_active:
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_COOLER) == 0:
+                    await self._async_cooler_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_FAN) == 0:
+                    await self._async_fan_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_DRYER) == 0:
+                    await self._async_dryer_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_COOL:
             self._hvac_mode = HVAC_MODE_COOL
-            if self._is_device_active and not self.reverse_cycle:
-                await self._async_heater_turn_off()
-                await self._async_fan_turn_off()
-                await self._async_dryer_turn_off()
+            if self._is_device_active:
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_HEATER) == 0:
+                    await self._async_heater_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_FAN) == 0:
+                    await self._async_fan_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_DRYER) == 0:
+                    await self._async_dryer_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_FAN_ONLY:
             self._hvac_mode = HVAC_MODE_FAN_ONLY
             if self._is_device_active:
-                await self._async_heater_turn_off()
-                await self._async_cooler_turn_off()
-                await self._async_dryer_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_COOLER) == 0:
+                    await self._async_cooler_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_HEATER) == 0:
+                    await self._async_heater_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_DRYER) == 0:
+                    await self._async_dryer_turn_off()
             await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_DRY:
             self._hvac_mode = HVAC_MODE_DRY
             if self._is_device_active:
-                await self._async_heater_turn_off()
-                await self._async_cooler_turn_off()
-                await self._async_fan_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_COOLER) == 0:
+                    await self._async_cooler_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_HEATER) == 0:
+                    await self._async_heater_turn_off()
+                if self.reverse_cycle.count(REVERSE_CYCLE_IS_FAN) == 0:
+                    await self._async_fan_turn_off()
+            await self._async_control_heating(force=True)
         elif hvac_mode == HVAC_MODE_OFF:
             self._hvac_mode = HVAC_MODE_OFF
             if self._is_device_active:
