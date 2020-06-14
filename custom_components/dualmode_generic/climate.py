@@ -208,7 +208,24 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.fan_behavior = fan_behavior
         self.dryer_entity_id = dryer_entity_id
         self.dryer_behavior = dryer_behavior
-        self.reverse_cycle = reverse_cycle
+        # This part allows previous users of the integration to update seamlessly #
+        if reverse_cycle.count(True) == 1:
+            self.reverse_cycle = [REVERSE_CYCLE_IS_HEATER, REVERSE_CYCLE_IS_COOLER]
+            _LOGGER.info(
+                "Detected legacy config for 'reverse_cycle' | "
+                "Please use this in future: "
+                "reverse_cycle: heater, cooler"
+            )
+        elif reverse_cycle.count(False) == 1:
+            self.reverse_cycle = []
+            _LOGGER.info(
+                "Detected legacy config for 'reverse_cycle' | "
+                "Please use leave it empty in future"
+            )
+        else:
+            self.reverse_cycle = reverse_cycle
+        # This part allows previous users of the integration to update seamlessly #
+
         self.min_cycle_duration = min_cycle_duration
         self._cold_tolerance = cold_tolerance
         self._hot_tolerance = hot_tolerance
@@ -216,11 +233,11 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._hvac_mode = initial_hvac_mode
         self._saved_target_temp = target_temp or away_temp
         self._temp_precision = precision
-        self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_OFF]
-        if self.fan_entity_id is not None:
-            self._hvac_list.append(HVAC_MODE_FAN_ONLY)
-        if self.dryer_entity_id is not None:
-            self._hvac_list.append(HVAC_MODE_DRY)
+        self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_DRY, HVAC_MODE_FAN_ONLY, HVAC_MODE_OFF]
+        if self.fan_entity_id is None:
+            self._hvac_list.remove(HVAC_MODE_FAN_ONLY)
+        if self.dryer_entity_id is None:
+            self._hvac_list.remove(HVAC_MODE_DRY)
         self._active = False
         self._cur_temp = None
         self._temp_lock = asyncio.Lock()
