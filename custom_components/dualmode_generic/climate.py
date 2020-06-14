@@ -211,14 +211,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         # This part allows previous users of the integration to update seamlessly #
         if reverse_cycle.count(True) == 1:
             self.reverse_cycle = [REVERSE_CYCLE_IS_HEATER, REVERSE_CYCLE_IS_COOLER]
-            _LOGGER.info(
+            _LOGGER.warning(
                 "Detected legacy config for 'reverse_cycle' | "
                 "Please use this in future: "
                 "reverse_cycle: heater, cooler"
             )
         elif reverse_cycle.count(False) == 1:
             self.reverse_cycle = []
-            _LOGGER.info(
+            _LOGGER.warning(
                 "Detected legacy config for 'reverse_cycle' | "
                 "Please use leave it empty in future"
             )
