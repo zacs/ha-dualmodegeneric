@@ -93,8 +93,8 @@ REVERSE_CYCLE_IS_DRYER = "dryer"
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
-        vol.Required(CONF_HEATER): cv.entity_id,
-        vol.Required(CONF_COOLER): cv.entity_id,
+        vol.Optional(CONF_HEATER): cv.entity_id,
+        vol.Optional(CONF_COOLER): cv.entity_id,
         vol.Required(CONF_SENSOR): cv.entity_id,
         vol.Optional(CONF_FAN): cv.entity_id,
         vol.Optional(CONF_FAN_BEHAVIOR, default=FAN_MODE_NEUTRAL): vol.In(
@@ -208,6 +208,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.fan_behavior = fan_behavior
         self.dryer_entity_id = dryer_entity_id
         self.dryer_behavior = dryer_behavior
+
         # This part allows previous users of the integration to update seamlessly #
         if reverse_cycle.count(True) == 1:
             self.reverse_cycle = [REVERSE_CYCLE_IS_HEATER, REVERSE_CYCLE_IS_COOLER]
@@ -234,6 +235,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._saved_target_temp = target_temp or away_temp
         self._temp_precision = precision
         self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_DRY, HVAC_MODE_FAN_ONLY, HVAC_MODE_OFF]
+        if self.cooler_entity_id is None:
+            self._hvac_list.remove(HVAC_MODE_COOL)
+        if self.heater_entity_id is None:
+            self._hvac_list.remove(HVAC_MODE_HEAT)
         if self.fan_entity_id is None:
             self._hvac_list.remove(HVAC_MODE_FAN_ONLY)
         if self.dryer_entity_id is None:
@@ -259,12 +264,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         async_track_state_change(
             self.hass, self.sensor_entity_id, self._async_sensor_changed
         )
-        async_track_state_change(
-            self.hass, self.heater_entity_id, self._async_switch_changed
-        )
-        async_track_state_change(
-            self.hass, self.cooler_entity_id, self._async_switch_changed
-        )
+        if self.heater_entity_id is not None:
+            async_track_state_change(
+                self.hass, self.heater_entity_id, self._async_switch_changed
+            )
+        if self.cooler_entity_id is not None:
+            async_track_state_change(
+                self.hass, self.cooler_entity_id, self._async_switch_changed
+            )
         if self.fan_entity_id is not None:
             async_track_state_change(
                 self.hass, self.fan_entity_id, self._async_switch_changed
@@ -530,7 +537,6 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 return
 
             # This variable is used for the long_enough condition and for the LOG Messages
-            active_entity = None
             if not force and time is None:
                 # If the `force` argument is True, we
                 # ignore `min_cycle_duration`.
@@ -585,7 +591,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
                     _LOGGER.info(
-                        "Keep-alive - Turning on heater heater %s", active_entity
+                        "Keep-alive - Turning on heater %s", active_entity
                     )
                     if self._hvac_mode == HVAC_MODE_COOL:
                         await self._async_cooler_turn_on()
@@ -638,8 +644,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
     @property
     def _is_device_active(self):
         """If the toggleable device is currently active."""
-        devices = \
-            [self.heater_entity_id, self.cooler_entity_id] + \
+        devices = [] + \
+            ([self.cooler_entity_id] if self.cooler_entity_id else []) + \
+            ([self.heater_entity_id] if self.heater_entity_id else []) + \
             ([self.fan_entity_id] if self.fan_entity_id else []) + \
             ([self.dryer_entity_id] if self.dryer_entity_id else [])
         device_states = [self.hass.states.is_state(dev, STATE_ON) for dev in devices]
@@ -652,23 +659,27 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     async def _async_heater_turn_on(self):
         """Turn heater toggleable device on."""
-        data = {ATTR_ENTITY_ID: self.heater_entity_id}
-        await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_ON, data)
+        if self.heater_entity_id is not None:
+            data = {ATTR_ENTITY_ID: self.heater_entity_id}
+            await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_ON, data)
 
     async def _async_heater_turn_off(self):
         """Turn heater toggleable device off."""
-        data = {ATTR_ENTITY_ID: self.heater_entity_id}
-        await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_OFF, data)
+        if self.heater_entity_id is not None:
+            data = {ATTR_ENTITY_ID: self.heater_entity_id}
+            await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_OFF, data)
 
     async def _async_cooler_turn_on(self):
         """Turn cooler toggleable device on."""
-        data = {ATTR_ENTITY_ID: self.cooler_entity_id}
-        await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_ON, data)
+        if self.cooler_entity_id is not None:
+            data = {ATTR_ENTITY_ID: self.cooler_entity_id}
+            await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_ON, data)
 
     async def _async_cooler_turn_off(self):
         """Turn cooler toggleable device off."""
-        data = {ATTR_ENTITY_ID: self.cooler_entity_id}
-        await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_OFF, data)
+        if self.cooler_entity_id is not None:
+            data = {ATTR_ENTITY_ID: self.cooler_entity_id}
+            await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_OFF, data)
 
     async def _async_fan_turn_on(self):
         """Turn cooler toggleable device on."""
