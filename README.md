@@ -22,8 +22,8 @@ climate:
     cooler: switch.fan
     target_sensor: sensor.my_temp_sensor
     reverse_cycle: true
-    away_temp_heater: 18 # optionnal but necessary if you want to have "away mode" available
-    away_temp_cooler: 27 # optionnal but necessary if you want to have "away mode" available
+    away_temp_heater: 18 # optional but necessary if you want to have "away mode" available
+    away_temp_cooler: 27 # optional but necessary if you want to have "away mode" available
 ```
 
 The component shares the same configuration variables as the standard `generic_thermostat`, with three exceptions:
