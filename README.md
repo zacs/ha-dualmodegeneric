@@ -1,8 +1,13 @@
-# Home Assistant - Dual Mode Generic Thermostat with support for two "away_temp" variables
+# Home Assistant - Dual Mode Generic Thermostat
 
-> Special thanks to [zacs](https://github.com/zacs/ha-dualmodegeneric) 
+> Special thanks to [shandoosheri](https://community.home-assistant.io/t/heat-cool-generic-thermostat/76443) for getting this to work on older versions of Home Assistant, which gave me an easy blueprint to follow. And thanks [@kevinvincent](https://github.com/kevinvincent) for writing a nice `custom_component` readme for me to fork.
 
-This component is a straightfoward fork of the mainline `dualmode_generic` thermostat by zacs that is himself a straightfoward fork of `generic_thermostat`.
+This component is a straightfoward fork of the mainline `generic_thermostat`.
+
+## Installation (HACS) - Recommended
+0. Have [HACS](https://custom-components.github.io/hacs/installation/manual/) installed, this will allow you to easily update
+1. Add `https://github.com/zacs/ha-dualmodegeneric` as a [custom repository](https://custom-components.github.io/hacs/usage/settings/#add-custom-repositories) as Type: Integration
+2. Click install under "Dual Mode Generic Thermostat", restart your instance.
 
 ## Installation (Manual)
 1. Download this repository as a ZIP (green button, top right) and unzip the archive
@@ -22,8 +27,8 @@ climate:
     cooler: switch.fan
     target_sensor: sensor.my_temp_sensor
     reverse_cycle: true
-    away_temp_heater: 18 # optional but necessary if you want to have "away mode" available
-    away_temp_cooler: 27 # optional but necessary if you want to have "away mode" available
+    away_temp_heater: 18 # optional
+    away_temp_cooler: 27 # optional
 ```
 
 The component shares the same configuration variables as the standard `generic_thermostat`, with three exceptions:
@@ -44,7 +49,7 @@ Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/co
 * While `heater`/`cooler` are documented to be `switch`es, they can also be `input_boolean`s if necessary.
 
 
-## In case of any Issue
+## Reporting an Issue
 1. Setup your logger to print debug messages for this component using:
 ```yaml
 logger:
@@ -54,4 +59,7 @@ logger:
 ```
 2. Restart HA
 3. Verify you're still having the issue
-4. Check the logs
+4. File an issue in this Github Repository containing your HA log (Developer section > Info > Load Full Home Assistant Log)
+   * You can paste your log file at pastebin https://pastebin.com/ and submit a link.
+   * Please include details about your setup (Pi, NUC, etc, docker?, HASSOS?)
+   * The log file can also be found at `/<config_dir>/home-assistant.log`
