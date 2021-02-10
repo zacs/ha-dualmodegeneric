@@ -1,4 +1,4 @@
-# Home Assistant - Dual Mode Generic Thermostat with support for two away_temp variables
+# Home Assistant - Dual Mode Generic Thermostat with support for two "away_temp" variables
 
 > Special thanks to [zacs](https://github.com/zacs/ha-dualmodegeneric) 
 
