@@ -1,13 +1,8 @@
-# Home Assistant - Dual Mode Generic Thermostat
+# Home Assistant - Dual Mode Generic Thermostat with support for two away_temp variables
 
-> Special thanks to [shandoosheri](https://community.home-assistant.io/t/heat-cool-generic-thermostat/76443) for getting this to work on older versions of Home Assistant, which gave me an easy blueprint to follow. And thanks [@kevinvincent](https://github.com/kevinvincent) for writing a nice `custom_component` readme for me to fork.
+> Special thanks to [zacs](https://github.com/zacs/ha-dualmodegeneric) 
 
-This component is a straightfoward fork of the mainline `generic_thermostat`.
-
-## Installation (HACS) - Recommended
-0. Have [HACS](https://custom-components.github.io/hacs/installation/manual/) installed, this will allow you to easily update
-1. Add `https://github.com/zacs/ha-dualmodegeneric` as a [custom repository](https://custom-components.github.io/hacs/usage/settings/#add-custom-repositories) as Type: Integration
-2. Click install under "Dual Mode Generic Thermostat", restart your instance.
+This component is a straightfoward fork of the mainline `dualmode_generic` thermostat by zacs that is himself a straightfoward fork of `generic_thermostat`.
 
 ## Installation (Manual)
 1. Download this repository as a ZIP (green button, top right) and unzip the archive
@@ -27,6 +22,8 @@ climate:
     cooler: switch.fan
     target_sensor: sensor.my_temp_sensor
     reverse_cycle: true
+    away_temp_heater: 18 # optionnal but necessary if you want to have "away mode" available
+    away_temp_cooler: 27 # optionnal but necessary if you want to have "away mode" available
 ```
 
 The component shares the same configuration variables as the standard `generic_thermostat`, with three exceptions:
