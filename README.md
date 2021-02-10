@@ -44,7 +44,7 @@ Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/co
 * While `heater`/`cooler` are documented to be `switch`es, they can also be `input_boolean`s if necessary.
 
 
-## Reporting an Issue
+## In case of any Issue
 1. Setup your logger to print debug messages for this component using:
 ```yaml
 logger:
@@ -54,7 +54,3 @@ logger:
 ```
 2. Restart HA
 3. Verify you're still having the issue
-4. File an issue in this Github Repository containing your HA log (Developer section > Info > Load Full Home Assistant Log)
-   * You can paste your log file at pastebin https://pastebin.com/ and submit a link.
-   * Please include details about your setup (Pi, NUC, etc, docker?, HASSOS?)
-   * The log file can also be found at `/<config_dir>/home-assistant.log`
