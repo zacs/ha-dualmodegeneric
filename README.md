@@ -54,3 +54,4 @@ logger:
 ```
 2. Restart HA
 3. Verify you're still having the issue
+4. Check the logs
