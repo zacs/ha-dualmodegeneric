@@ -19,19 +19,42 @@ This component is a straightfoward fork of the mainline `generic_thermostat`.
 ## Configuration
 Add the following to your configuration file
 
+### Example Config
 ```yaml
 climate:
   - platform: dualmode_generic
     name: My Thermostat
     heater: switch.heater
-    cooler: switch.fan
-    target_sensor: sensor.my_temp_sensor
-    reverse_cycle: true
+    cooler: switch.cooler
+    fan: switch.fan
+    fan_behavior: cooler
+    dryer: switch.dryer
+    dryer_behavior: cooler
+    target_sensor: sensor.temperature_sensor
+    min_temp: 16
+    max_temp: 30
+    cold_tolerance: 0.8
+    hot_tolerance: 0.4
+    min_cycle_duration:
+        minutes: 20
 ```
 
-The component shares the same configuration variables as the standard `generic_thermostat`, with three exceptions:
+### Possible values for *_behavior
+```yaml
+fan_behavior: [cooler, neutral, heater] # <-- only one
+dryer_behavior: [cooler, neutral, heater] # <-- only one
+```
+
+### Possible values for reverse_cylce
+```yaml
+reverse_cycle: cooler, heater, dryer, fan # <-- multiple are possible, (True/False) are still valid for backward compatibility
+```
+
+The component shares the same configuration variables as the standard `generic_thermostat`, with a few exceptions:
 * A `cooler` variable has been added where you can specify the `entity_id` of your switch for a cooling unit (AC, fan, etc).
-* If the cooling and heating unit are the same device (e.g. a reverse cycle air conditioner) setting `reverse_cycle` to `true` will ensure the device isn't switched off entirely when switching modes
+* A `fan` and `dryer` variable have been added where you can specify the `entity_id`s of your switches for a fan and/or dryer unit.
+* I basically made all the `switches`/`input_booleans` optional, so the user can decide which modes he wants to use (my HVAC only supports `Cool`, `Dry`, `Fan_only`). This together with `template_switches` makes for a great way to make my HVAC controllable via IR.
+* If the your climate unit offers multiple modes (e.g. a reverse cycle air conditioner) setting `reverse_cycle` to `cooler, heater` will ensure the device isn't switched off entirely when switching modes
 * The `ac_mode` variable has been removed, since it makes no sense for this use case.
 
 Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/components/generic_thermostat/) for details on the rest of the variables. This component doesn't change their functionality.
@@ -44,7 +67,7 @@ Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/co
 
 * By default, the component will restore the last state of the thermostat prior to a restart.
 
-* While `heater`/`cooler` are documented to be `switch`es, they can also be `input_boolean`s if necessary.
+* While `heater`/`cooler`/`dryer`/`fan` are documented to be `switch`es, they can also be `input_boolean`s if necessary.
 
 
 ## Reporting an Issue
