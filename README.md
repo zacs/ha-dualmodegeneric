@@ -32,6 +32,7 @@ climate:
     dryer_behavior: cooler
     target_sensor: sensor.temperature_sensor
     reverse_cycle: cooler, heater
+    enable_heat_cool: True
     min_temp: 16
     max_temp: 30
     cold_tolerance: 0.8
