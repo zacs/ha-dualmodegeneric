@@ -271,6 +271,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             enable_heat_cool = False
         if enable_heat_cool:
             self._support_flags = SUPPORT_FLAGS | SUPPORT_TARGET_TEMPERATURE_RANGE
+        else:
+            self._support_flags = SUPPORT_FLAGS
         self._enable_heat_cool = enable_heat_cool
 
         # Yes I'm aware that there's probably a more elegant way of doing this
