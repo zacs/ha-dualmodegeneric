@@ -388,7 +388,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                         self._target_temp_low = self.min_temp
                     else:
                         self._target_temp = self.min_temp
-                    if SUPPORT_TARGET_TEMPERATURE_RANGE in self._support_flags:
+                    if self._support_flags == SUPPORT_TARGET_TEMPERATURE_RANGE:
                         self._target_temp_high = self.max_temp
                         self._target_temp_low = self.min_temp
                     _LOGGER.warning(
@@ -822,7 +822,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     # activate at the edges of the desired range
     def _is_too_cold_activate(self):
-        if SUPPORT_TARGET_TEMPERATURE_RANGE in self._support_flags:
+        if self._support_flags == SUPPORT_TARGET_TEMPERATURE_RANGE:
             return self._target_temp_low >= self._cur_temp + self._cold_tolerance
         else:
             return self._target_temp >= self._cur_temp + self._cold_tolerance
@@ -832,14 +832,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         #     return self._target_temp >= self._cur_temp + self._cold_tolerance
 
     def _is_too_hot_activate(self):
-        if SUPPORT_TARGET_TEMPERATURE_RANGE in self._support_flags:
+        if self._support_flags == SUPPORT_TARGET_TEMPERATURE_RANGE:
             return self._cur_temp >= self._target_temp_high + self._hot_tolerance
         else:
             return self._cur_temp >= self._target_temp + self._hot_tolerance
 
     # deactivate at the extremes of the desired range, plus/minus tolerance
     def _is_too_cold_deactivate(self):
-        if SUPPORT_TARGET_TEMPERATURE_RANGE in self._support_flags:
+        if self._support_flags == SUPPORT_TARGET_TEMPERATURE_RANGE:
             # Use the midpoint in the set range as our target temp when in range mode
             # return ((self._target_temp_low + self._target_temp_high)/2) >= self._cur_temp + self._cold_tolerance
             too_cold = self._target_temp_high >= self._cur_temp + self._cold_tolerance
@@ -852,7 +852,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             return self._target_temp >= self._cur_temp + self._cold_tolerance
 
     def _is_too_hot_deactivate(self):
-        if SUPPORT_TARGET_TEMPERATURE_RANGE in self._support_flags:
+        if self._support_flags == SUPPORT_TARGET_TEMPERATURE_RANGE:
             too_hot = self._cur_temp >= self._target_temp_low + self._hot_tolerance
             _LOGGER.info(
                 "_is_too_hot_deactivate: %s| %s,%s,%s",
