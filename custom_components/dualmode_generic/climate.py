@@ -78,7 +78,7 @@ CONF_KEEP_ALIVE = "keep_alive"
 CONF_INITIAL_HVAC_MODE = "initial_hvac_mode"
 CONF_AWAY_TEMP = "away_temp"
 CONF_PRECISION = "precision"
-SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE|SUPPORT_TARGET_TEMPERATURE_RANGE
+SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
@@ -204,17 +204,18 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._temp_lock = asyncio.Lock()
         self._min_temp = min_temp
         self._max_temp = max_temp
+        self._target_temp = target_temp
+        self._target_temp_high = target_temp_high
+        self._target_temp_low = target_temp_low
+        self._support_flags = SUPPORT_FLAGS
         if target_temp_high and target_temp_low:
             self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_OFF, HVAC_MODE_HEAT_COOL]
-            self._target_temp_high = target_temp_high
-            self._target_temp_low = target_temp_low
+            self._support_flags = SUPPORT_FLAGS | SUPPORT_TARGET_TEMPERATURE_RANGE
         else:
             self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_OFF]
-            self._target_temp = target_temp
         self._unit = unit
-        self._support_flags = SUPPORT_FLAGS
         if away_temp:
-            self._support_flags = SUPPORT_FLAGS | SUPPORT_PRESET_MODE
+            self._support_flags = self._support_flags | SUPPORT_PRESET_MODE
         self._away_temp = away_temp
         self._is_away = False
         self.humidity_sensor_entity_id = humidity_sensor_entity_id
