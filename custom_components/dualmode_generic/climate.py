@@ -522,11 +522,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if self._hvac_mode == HVAC_MODE_COOL:
                 if self._away_temp_cooler:
                     self._target_temp = self._away_temp_cooler
-                else self._target_temp = self._away_temp
+                else:
+                    self._target_temp = self._away_temp
             elif self._hvac_mode == HVAC_MODE_HEAT:
                 if self._away_temp_heater:
                     self._target_temp = self._away_temp_heater
-                else self._target_temp = self._away_temp
+                else:
+                    self._target_temp = self._away_temp
             await self._async_control_heating(force=True)
         elif preset_mode == PRESET_NONE and self._is_away:
             self._is_away = False
