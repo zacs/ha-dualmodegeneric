@@ -86,7 +86,7 @@ CONF_KEEP_ALIVE = "keep_alive"
 CONF_INITIAL_HVAC_MODE = "initial_hvac_mode"
 CONF_AWAY_TEMP = "away_temp"
 CONF_PRECISION = "precision"
-SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE | SUPPORT_TARGET_TEMPERATURE_RANGE
+SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
 CONF_ENABLE_HEAT_COOL = "enable_heat_cool"
 
 FAN_MODE_COOL = "cooler"
@@ -125,7 +125,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_TARGET_TEMP_HIGH): vol.Coerce(float),
         vol.Optional(CONF_TARGET_TEMP_LOW): vol.Coerce(float),
         vol.Optional(CONF_KEEP_ALIVE): vol.All(cv.time_period, cv.positive_timedelta),
-        vol.Optional(CONF_ENABLE_HEAT_COOL, default=True): vol.Boolean(),
+        vol.Optional(CONF_ENABLE_HEAT_COOL, default=False): vol.Boolean(),
         vol.Optional(CONF_INITIAL_HVAC_MODE): vol.In(
             [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_FAN_ONLY, HVAC_MODE_DRY, HVAC_MODE_OFF, HVAC_MODE_HEAT_COOL]
         ),
@@ -240,14 +240,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.dryer_behavior = dryer_behavior
 
         # This part allows previous users of the integration to update seamlessly #
-        if reverse_cycle.count(True) == 1:
+        if True in reverse_cycle:
             self.reverse_cycle = [REVERSE_CYCLE_IS_HEATER, REVERSE_CYCLE_IS_COOLER]
             _LOGGER.warning(
                 "Detected legacy config for 'reverse_cycle' | "
                 "Please use this in future: "
                 "reverse_cycle: heater, cooler"
             )
-        elif reverse_cycle.count(False) == 1:
+        elif False in reverse_cycle:
             self.reverse_cycle = []
             _LOGGER.warning(
                 "Detected legacy config for 'reverse_cycle' | "
@@ -265,16 +265,20 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._saved_target_temp = target_temp or away_temp
         self._temp_precision = precision
 
+        # This part of the code checks whether both cooler and heater are defined and deactivates heat_cool
+        # and deactivates the mode if necessary.
         if not self.cooler_entity_id or not self.heater_entity_id:
             enable_heat_cool = False
         if enable_heat_cool:
-            self._support_flags = SUPPORT_TARGET_TEMPERATURE_RANGE
-        else:
-            self._support_flags = SUPPORT_TARGET_TEMPERATURE
+            self._support_flags = SUPPORT_FLAGS | SUPPORT_TARGET_TEMPERATURE_RANGE
         self._enable_heat_cool = enable_heat_cool
 
-        self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_DRY, HVAC_MODE_FAN_ONLY, HVAC_MODE_OFF,
-                           HVAC_MODE_HEAT_COOL]
+        # Yes I'm aware that there's probably a more elegant way of doing this
+        self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT,
+                           HVAC_MODE_DRY, HVAC_MODE_FAN_ONLY,
+                           HVAC_MODE_OFF, HVAC_MODE_HEAT_COOL]
+
+        # Removes unsupported modes based on whats available from the config
         if self.cooler_entity_id is None:
             self._hvac_list.remove(HVAC_MODE_COOL)
         if self.heater_entity_id is None:
@@ -285,6 +289,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._hvac_list.remove(HVAC_MODE_DRY)
         if not enable_heat_cool:
             self._hvac_list.remove(HVAC_MODE_HEAT_COOL)
+
         self._active = False
         self._cur_temp = None
         self._cur_humidity = None
@@ -296,7 +301,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._target_temp = target_temp
         self._unit = unit
         if away_temp:
-            self._support_flags = self._support_flags | SUPPORT_PRESET_MODE
+            self._support_flags |= SUPPORT_PRESET_MODE
         self._away_temp = away_temp
         self._is_away = False
         self.humidity_sensor_entity_id = humidity_sensor_entity_id
@@ -832,20 +837,20 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     # activate at the edges of the desired range
     def _is_too_cold_activate(self):
-        if self._support_flags & SUPPORT_TARGET_TEMPERATURE_RANGE == SUPPORT_TARGET_TEMPERATURE_RANGE:
+        if self._hvac_mode == HVAC_MODE_HEAT_COOL:
             return self._target_temp_low >= self._cur_temp + self._cold_tolerance
         else:
             return self._target_temp >= self._cur_temp + self._cold_tolerance
 
     def _is_too_hot_activate(self):
-        if self._support_flags & SUPPORT_TARGET_TEMPERATURE_RANGE == SUPPORT_TARGET_TEMPERATURE_RANGE:
+        if self._hvac_mode == HVAC_MODE_HEAT_COOL:
             return self._cur_temp >= self._target_temp_high + self._hot_tolerance
         else:
             return self._cur_temp >= self._target_temp + self._hot_tolerance
 
     # deactivate at the extremes of the desired range, plus/minus tolerance
     def _is_too_cold_deactivate(self):
-        if self._support_flags & SUPPORT_TARGET_TEMPERATURE_RANGE == SUPPORT_TARGET_TEMPERATURE_RANGE:
+        if self._hvac_mode == HVAC_MODE_HEAT_COOL:
             # Use the midpoint in the set range as our target temp when in range mode
             # return ((self._target_temp_low + self._target_temp_high)/2) >= self._cur_temp + self._cold_tolerance
             too_cold = self._target_temp_high >= self._cur_temp + self._cold_tolerance
@@ -858,7 +863,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             return self._target_temp >= self._cur_temp + self._cold_tolerance
 
     def _is_too_hot_deactivate(self):
-        if self._support_flags & SUPPORT_TARGET_TEMPERATURE_RANGE == SUPPORT_TARGET_TEMPERATURE_RANGE:
+        if self._hvac_mode == HVAC_MODE_HEAT_COOL:
             too_hot = self._cur_temp >= self._target_temp_low + self._hot_tolerance
             _LOGGER.info(
                 "_is_too_hot_deactivate: %s| %s,%s,%s",
