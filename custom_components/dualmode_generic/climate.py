@@ -265,10 +265,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._saved_target_temp = target_temp or away_temp
         self._temp_precision = precision
 
-        if self.cooler_entity_id and self.heater_entity_id:
-            self._enable_heat_cool = enable_heat_cool
+        if not self.cooler_entity_id or not self.heater_entity_id:
+            enable_heat_cool = False
+        if enable_heat_cool:
+            self._support_flags = SUPPORT_TARGET_TEMPERATURE_RANGE
         else:
-            self._enable_heat_cool = False
+            self._support_flags = SUPPORT_TARGET_TEMPERATURE
+        self._enable_heat_cool = enable_heat_cool
 
         self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_DRY, HVAC_MODE_FAN_ONLY, HVAC_MODE_OFF,
                            HVAC_MODE_HEAT_COOL]
@@ -280,7 +283,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._hvac_list.remove(HVAC_MODE_FAN_ONLY)
         if self.dryer_entity_id is None:
             self._hvac_list.remove(HVAC_MODE_DRY)
-        if not self._enable_heat_cool:
+        if not enable_heat_cool:
             self._hvac_list.remove(HVAC_MODE_HEAT_COOL)
         self._active = False
         self._cur_temp = None
@@ -292,10 +295,6 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._target_temp_low = target_temp_low
         self._target_temp = target_temp
         self._unit = unit
-        if self._enable_heat_cool:
-            self._support_flags = SUPPORT_TARGET_TEMPERATURE_RANGE
-        else:
-            self._support_flags = SUPPORT_TARGET_TEMPERATURE
         if away_temp:
             self._support_flags = self._support_flags | SUPPORT_PRESET_MODE
         self._away_temp = away_temp
