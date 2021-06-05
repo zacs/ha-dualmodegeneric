@@ -274,9 +274,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._temp_lock = asyncio.Lock()
         self._min_temp = min_temp
         self._max_temp = max_temp
-        self._target_temp = target_temp
-        self._target_temp_high = target_temp_high
-        self._target_temp_low = target_temp_low
+        if target_temp_high and target_temp_low:
+            self._target_temp_high = target_temp_high
+            self._target_temp_low = target_temp_low
+        else:
+            self._hvac_list.remove(HVAC_MODE_HEAT_COOL)
+            self._target_temp = target_temp
         self._unit = unit
         self._support_flags = SUPPORT_FLAGS
         if away_temp:
