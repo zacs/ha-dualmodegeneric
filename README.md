@@ -32,7 +32,8 @@ climate:
     dryer_behavior: cooler
     target_sensor: sensor.temperature_sensor
     reverse_cycle: cooler, heater
-    enable_heat_cool: True
+    target_temp_high: 24 # <-- This is only needed if you want to use the heat_cool mode
+    target_temp_low: 20  # <-- This is only needed if you want to use the heat_cool mode
     min_temp: 16
     max_temp: 30
     cold_tolerance: 0.8
@@ -74,8 +75,8 @@ Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/co
   turning on the configured heater when the temperature drops below the bottom of the range by `cold_tolerance` 
   and turning on the configured cooler when the temperature rises above the top of the set range by the `hot_tolerance` 
   amount. When the measured temperature is within the configured range by `(hot|cold)_tolerance` the thermostat will 
-  transition to idle mode and both heater and cooler will be turned off. __This mode needs to be enabled explicitly 
-  by setting `enable_heat_cool` to `True`!__
+  transition to idle mode and both heater and cooler will be turned off. __This mode needs to be enabled implicitly 
+  by setting `target_temp_high` and `target_temp_low`!__
 
 * Keepalive logic has been updated to be aware of the mode in current use, so should function as expected.
 
