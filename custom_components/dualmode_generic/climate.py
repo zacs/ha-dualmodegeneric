@@ -88,10 +88,11 @@ CONF_AWAY_TEMP = "away_temp"
 CONF_PRECISION = "precision"
 SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
 
+CONF_ENABLE_HEAT_COOL = "enable_heat_cool"
+
 FAN_MODE_COOL = "cooler"
 FAN_MODE_HEAT = "heater"
 FAN_MODE_NEUTRAL = "neutral"
-
 DRYER_MODE_COOL = "cooler"
 DRYER_MODE_HEAT = "heater"
 DRYER_MODE_NEUTRAL = "neutral"
@@ -124,6 +125,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_TARGET_TEMP_HIGH): vol.Coerce(float),
         vol.Optional(CONF_TARGET_TEMP_LOW): vol.Coerce(float),
         vol.Optional(CONF_KEEP_ALIVE): vol.All(cv.time_period, cv.positive_timedelta),
+        vol.Optional(CONF_ENABLE_HEAT_COOL, default=False): vol.Boolean(),
         vol.Optional(CONF_INITIAL_HVAC_MODE): vol.In(
             [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_FAN_ONLY, HVAC_MODE_DRY, HVAC_MODE_OFF, HVAC_MODE_HEAT_COOL]
         ),
@@ -161,6 +163,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     initial_hvac_mode = config.get(CONF_INITIAL_HVAC_MODE)
     away_temp = config.get(CONF_AWAY_TEMP)
     precision = config.get(CONF_PRECISION)
+    enable_heat_cool = config.get(CONF_ENABLE_HEAT_COOL)
     unit = hass.config.units.temperature_unit
     humidity_sensor_entity_id = config.get(CONF_HUMIDITY_SENSOR)
 
@@ -188,6 +191,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 initial_hvac_mode,
                 away_temp,
                 precision,
+                enable_heat_cool,
                 unit,
                 humidity_sensor_entity_id,
             )
@@ -221,6 +225,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             initial_hvac_mode,
             away_temp,
             precision,
+            enable_heat_cool,
             unit,
             humidity_sensor_entity_id,
     ):
@@ -261,15 +266,15 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._temp_precision = precision
 
         # This part of the code checks whether both cooler and heater are defined and deactivates heat_cool
-        # mode if necessary. Additionally it checks whether target_temp_high/low are set and deactivates heat_cool
-        # mode should this not be the case.
-        enable_heat_cool = self.cooler_entity_id and self.heater_entity_id and target_temp_high and target_temp_low
+        # mode if necessary.
+        self._enable_heat_cool = self.cooler_entity_id and self.heater_entity_id and enable_heat_cool
 
-        if enable_heat_cool:
+        if self._enable_heat_cool:
             self._support_flags = SUPPORT_FLAGS | SUPPORT_TARGET_TEMPERATURE_RANGE
         else:
             self._support_flags = SUPPORT_FLAGS
 
+        # This list contains all supported HVAC_MODES
         self._hvac_list = [HVAC_MODE_COOL, HVAC_MODE_HEAT,
                            HVAC_MODE_DRY, HVAC_MODE_FAN_ONLY,
                            HVAC_MODE_OFF, HVAC_MODE_HEAT_COOL]
@@ -283,7 +288,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._hvac_list.remove(HVAC_MODE_FAN_ONLY)
         if self.dryer_entity_id is None:
             self._hvac_list.remove(HVAC_MODE_DRY)
-        if not enable_heat_cool:
+        if not self._enable_heat_cool:
             self._hvac_list.remove(HVAC_MODE_HEAT_COOL)
 
         self._active = False
