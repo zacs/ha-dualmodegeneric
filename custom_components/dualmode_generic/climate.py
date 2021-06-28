@@ -708,10 +708,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                     if self._hvac_mode == HVAC_MODE_DRY:
                         active_entity = self.dryer_entity_id
                     if self._hvac_mode == HVAC_MODE_HEAT_COOL:
-                        if self.hass.states.is_state(self.heater_entity_id, STATE_ON):
-                            active_entity = self.heater_entity_id
-                        elif self.hass.states.is_state(self.cooler_entity_id, STATE_ON):
+                        if self.hass.states.is_state(self.cooler_entity_id, STATE_ON):
                             active_entity = self.cooler_entity_id
+                        else:
+                            active_entity = self.heater_entity_id
 
                     if self._is_device_active:
                         current_state = STATE_ON
