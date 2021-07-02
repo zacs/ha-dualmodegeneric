@@ -24,6 +24,7 @@ Add the following to your configuration file
 climate:
   - platform: dualmode_generic
     name: My Thermostat
+    unique_id: climate.my_thermostat
     heater: switch.heater
     cooler: switch.cooler
     fan: switch.fan
