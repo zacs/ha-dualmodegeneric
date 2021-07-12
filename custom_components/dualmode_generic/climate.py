@@ -38,6 +38,7 @@ from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_TEMPERATURE,
     CONF_NAME,
+    CONF_UNIQUE_ID,
     EVENT_HOMEASSISTANT_START,
     PRECISION_HALVES,
     PRECISION_TENTHS,
@@ -132,7 +133,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_AWAY_TEMP): vol.Coerce(float),
         vol.Optional(CONF_PRECISION): vol.In(
             [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
-        )
+        ),
+        vol.Optional(CONF_UNIQUE_ID): cv.string,
     }
 )
 
@@ -165,6 +167,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     precision = config.get(CONF_PRECISION)
     enable_heat_cool = config.get(CONF_ENABLE_HEAT_COOL)
     unit = hass.config.units.temperature_unit
+    unique_id = config.get(CONF_UNIQUE_ID)
     humidity_sensor_entity_id = config.get(CONF_HUMIDITY_SENSOR)
 
     async_add_entities(
@@ -193,6 +196,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 precision,
                 enable_heat_cool,
                 unit,
+                unique_id,
                 humidity_sensor_entity_id,
             )
         ]
@@ -227,6 +231,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             precision,
             enable_heat_cool,
             unit,
+            unique_id,
             humidity_sensor_entity_id,
     ):
         """Initialize the thermostat."""
@@ -301,6 +306,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._target_temp_low = target_temp_low
         self._target_temp = target_temp
         self._unit = unit
+        self._unique_id = unique_id
+        self._support_flags = SUPPORT_FLAGS
+
         if away_temp:
             self._support_flags |= SUPPORT_PRESET_MODE
         self._away_temp = away_temp
@@ -465,6 +473,11 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
     def name(self):
         """Return the name of the thermostat."""
         return self._name
+
+    @property
+    def unique_id(self):
+        """Return the unique id of this thermostat."""
+        return self._unique_id
 
     @property
     def precision(self):
