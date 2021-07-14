@@ -307,7 +307,6 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._target_temp = target_temp
         self._unit = unit
         self._unique_id = unique_id
-        self._support_flags = SUPPORT_FLAGS
 
         if away_temp:
             self._support_flags |= SUPPORT_PRESET_MODE
