@@ -48,7 +48,7 @@ fan_behavior: [cooler, neutral, heater] # <-- only one
 dryer_behavior: [cooler, neutral, heater] # <-- only one
 ```
 
-### Possible values for reverse_cylce
+### Possible values for reverse_cycle
 ```yaml
 reverse_cycle: cooler, heater, dryer, fan # <-- multiple are possible, (True/False) are still valid for backward compatibility
 ```
