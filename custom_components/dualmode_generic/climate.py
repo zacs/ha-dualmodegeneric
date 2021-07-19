@@ -704,6 +704,21 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if not self._active or self._hvac_mode == HVAC_MODE_OFF:
                 return
 
+            # This check sets the active entity outside of the checks below to make it available for keep-alive logic
+            if self._hvac_mode == HVAC_MODE_COOL:
+                active_entity = self.cooler_entity_id
+            if self._hvac_mode == HVAC_MODE_HEAT:
+                active_entity = self.heater_entity_id
+            if self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                active_entity = self.fan_entity_id
+            if self._hvac_mode == HVAC_MODE_DRY:
+                active_entity = self.dryer_entity_id
+            if self._hvac_mode == HVAC_MODE_HEAT_COOL:
+                if self.hass.states.is_state(self.cooler_entity_id, STATE_ON):
+                    active_entity = self.cooler_entity_id
+                else:
+                    active_entity = self.heater_entity_id
+
             # This variable is used for the long_enough condition and for the LOG Messages
             if not force and time is None:
                 # If the `force` argument is True, we
@@ -711,20 +726,6 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 # If the `time` argument is not none, we were invoked for
                 # keep-alive purposes, and `min_cycle_duration` is irrelevant.
                 if self.min_cycle_duration:
-                    if self._hvac_mode == HVAC_MODE_COOL:
-                        active_entity = self.cooler_entity_id
-                    if self._hvac_mode == HVAC_MODE_HEAT:
-                        active_entity = self.heater_entity_id
-                    if self._hvac_mode == HVAC_MODE_FAN_ONLY:
-                        active_entity = self.fan_entity_id
-                    if self._hvac_mode == HVAC_MODE_DRY:
-                        active_entity = self.dryer_entity_id
-                    if self._hvac_mode == HVAC_MODE_HEAT_COOL:
-                        if self.hass.states.is_state(self.cooler_entity_id, STATE_ON):
-                            active_entity = self.cooler_entity_id
-                        else:
-                            active_entity = self.heater_entity_id
-
                     if self._is_device_active:
                         current_state = STATE_ON
                     else:
