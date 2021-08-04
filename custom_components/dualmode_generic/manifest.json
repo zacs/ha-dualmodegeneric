@@ -2,6 +2,7 @@
     "domain": "dualmode_generic",
     "name": "Dual-Mode Generic Thermostat",
     "documentation": "https://github.com/zacs/ha-dualmodegeneric",
+    "version": "0.2",
     "dependencies": [],
     "codeowners": ["@zacs"],
     "requirements": []
