@@ -86,6 +86,8 @@ CONF_HOT_TOLERANCE = "hot_tolerance"
 CONF_KEEP_ALIVE = "keep_alive"
 CONF_INITIAL_HVAC_MODE = "initial_hvac_mode"
 CONF_AWAY_TEMP = "away_temp"
+CONF_AWAY_TEMP_HEATER = "away_temp_heater"
+CONF_AWAY_TEMP_COOLER = "away_temp_cooler"
 CONF_PRECISION = "precision"
 SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
 
@@ -131,6 +133,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
             [HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_FAN_ONLY, HVAC_MODE_DRY, HVAC_MODE_OFF, HVAC_MODE_HEAT_COOL]
         ),
         vol.Optional(CONF_AWAY_TEMP): vol.Coerce(float),
+        vol.Optional(CONF_AWAY_TEMP_HEATER): vol.Coerce(float),
+        vol.Optional(CONF_AWAY_TEMP_COOLER): vol.Coerce(float),
         vol.Optional(CONF_PRECISION): vol.In(
             [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
         ),
@@ -164,6 +168,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     keep_alive = config.get(CONF_KEEP_ALIVE)
     initial_hvac_mode = config.get(CONF_INITIAL_HVAC_MODE)
     away_temp = config.get(CONF_AWAY_TEMP)
+    away_temp_heater = config.get(CONF_AWAY_TEMP_HEATER)
+    away_temp_cooler = config.get(CONF_AWAY_TEMP_COOLER)
     precision = config.get(CONF_PRECISION)
     enable_heat_cool = config.get(CONF_ENABLE_HEAT_COOL)
     unit = hass.config.units.temperature_unit
@@ -193,6 +199,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 keep_alive,
                 initial_hvac_mode,
                 away_temp,
+                away_temp_heater,
+                away_temp_cooler,
                 precision,
                 enable_heat_cool,
                 unit,
@@ -228,6 +236,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             keep_alive,
             initial_hvac_mode,
             away_temp,
+            away_temp_heater,
+            away_temp_cooler,
             precision,
             enable_heat_cool,
             unit,
@@ -267,7 +277,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._hot_tolerance = hot_tolerance
         self._keep_alive = keep_alive
         self._hvac_mode = initial_hvac_mode
-        self._saved_target_temp = target_temp or away_temp
+        self._saved_target_temp = target_temp or away_temp or (away_temp_heater and away_temp_cooler)
         self._temp_precision = precision
 
         # This part of the code checks whether both cooler and heater are defined and deactivates heat_cool
@@ -307,10 +317,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._target_temp = target_temp
         self._unit = unit
         self._unique_id = unique_id
-
-        if away_temp:
-            self._support_flags |= SUPPORT_PRESET_MODE
+        self._support_flags = SUPPORT_FLAGS
+        if away_temp or (away_temp_heater and away_temp_cooler):
+            self._support_flags = SUPPORT_FLAGS | SUPPORT_PRESET_MODE
         self._away_temp = away_temp
+        self._away_temp_heater = away_temp_heater
+        self._away_temp_cooler = away_temp_cooler
         self._is_away = False
         self.humidity_sensor_entity_id = humidity_sensor_entity_id
 
@@ -559,8 +571,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     @property
     def preset_modes(self):
-        """Return a list of available preset modes or PRESET_NONE if _away_temp is undefined."""
-        return [PRESET_NONE, PRESET_AWAY] if self._away_temp else PRESET_NONE
+        """Return a list of available preset modes or PRESET_NONE if _away_temp or (_away_temp_heater and _away_temp_cooler) are undefined."""
+        return [PRESET_NONE, PRESET_AWAY] if (self._away_temp or (self._away_temp_heater and self._away_temp_cooler)) else PRESET_NONE
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set hvac mode."""
@@ -943,7 +955,16 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         if preset_mode == PRESET_AWAY and not self._is_away:
             self._is_away = True
             self._saved_target_temp = self._target_temp
-            self._target_temp = self._away_temp
+            if self._hvac_mode == HVAC_MODE_COOL:
+                if self._away_temp_cooler:
+                    self._target_temp = self._away_temp_cooler
+                else:
+                    self._target_temp = self._away_temp
+            elif self._hvac_mode == HVAC_MODE_HEAT:
+                if self._away_temp_heater:
+                    self._target_temp = self._away_temp_heater
+                else:
+                    self._target_temp = self._away_temp
             await self._async_control_heating(force=True)
         elif preset_mode == PRESET_NONE and self._is_away:
             self._is_away = False
