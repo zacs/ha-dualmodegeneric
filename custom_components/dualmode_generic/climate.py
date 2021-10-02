@@ -317,9 +317,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._target_temp = target_temp
         self._unit = unit
         self._unique_id = unique_id
-        self._support_flags = SUPPORT_FLAGS
         if away_temp or (away_temp_heater and away_temp_cooler):
-            self._support_flags = SUPPORT_FLAGS | SUPPORT_PRESET_MODE
+            self._support_flags = self._support_flags | SUPPORT_PRESET_MODE
         self._away_temp = away_temp
         self._away_temp_heater = away_temp_heater
         self._away_temp_cooler = away_temp_cooler
