@@ -440,7 +440,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 if old_state.attributes.get(ATTR_TARGET_TEMP_HIGH) is None:
                     self._target_temp_high = self.max_temp
                 else:
-                    self._target_temp_low = float(old_state.attributes[ATTR_TARGET_TEMP_HIGH])
+                    self._target_temp_high = float(old_state.attributes[ATTR_TARGET_TEMP_HIGH])
             if old_state.attributes.get(ATTR_PRESET_MODE) == PRESET_AWAY:
                 self._is_away = True
             if not self._hvac_mode and old_state.state:
