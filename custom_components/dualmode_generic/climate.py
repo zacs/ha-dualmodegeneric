@@ -380,7 +380,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             )
 
         @callback
-        def _async_startup():
+        def _async_startup(event=None):
             """Init on startup."""
             sensor_state = self.hass.states.get(self.sensor_entity_id)
             if sensor_state and sensor_state.state not in (
