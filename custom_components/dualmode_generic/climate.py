@@ -16,6 +16,7 @@ from homeassistant.components.climate.const import (
     ATTR_PRESET_MODE,
     ATTR_TARGET_TEMP_LOW,
     ATTR_TARGET_TEMP_HIGH,
+    ATTR_TARGET_TEMP_STEP,
     CURRENT_HVAC_COOL,
     CURRENT_HVAC_HEAT,
     CURRENT_HVAC_FAN,
@@ -89,6 +90,7 @@ CONF_AWAY_TEMP = "away_temp"
 CONF_AWAY_TEMP_HEATER = "away_temp_heater"
 CONF_AWAY_TEMP_COOLER = "away_temp_cooler"
 CONF_PRECISION = "precision"
+CONF_TEMP_STEP = "target_temp_step"
 SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
 
 CONF_ENABLE_HEAT_COOL = "enable_heat_cool"
@@ -138,6 +140,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_PRECISION): vol.In(
             [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
         ),
+        vol.Optional(CONF_TEMP_STEP): vol.In(
+            [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
+        ),
         vol.Optional(CONF_UNIQUE_ID): cv.string,
     }
 )
@@ -171,6 +176,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     away_temp_heater = config.get(CONF_AWAY_TEMP_HEATER)
     away_temp_cooler = config.get(CONF_AWAY_TEMP_COOLER)
     precision = config.get(CONF_PRECISION)
+    target_temperature_step = config.get(CONF_TEMP_STEP)
     enable_heat_cool = config.get(CONF_ENABLE_HEAT_COOL)
     unit = hass.config.units.temperature_unit
     unique_id = config.get(CONF_UNIQUE_ID)
@@ -202,6 +208,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 away_temp_heater,
                 away_temp_cooler,
                 precision,
+                target_temperature_step,
                 enable_heat_cool,
                 unit,
                 unique_id,
@@ -239,6 +246,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             away_temp_heater,
             away_temp_cooler,
             precision,
+            target_temperature_step,
             enable_heat_cool,
             unit,
             unique_id,
@@ -279,6 +287,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._hvac_mode = initial_hvac_mode
         self._saved_target_temp = target_temp or away_temp or (away_temp_heater and away_temp_cooler)
         self._temp_precision = precision
+        self._temp_target_temperature_step = target_temperature_step
 
         # This part of the code checks whether both cooler and heater are defined and deactivates heat_cool
         # mode if necessary.
@@ -495,12 +504,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         if self._temp_precision is not None:
             return self._temp_precision
         return super().precision
-    
+
     @property
     def target_temperature_step(self):
         """Return the supported step of target temperature."""
-        # Since this integration does not yet have a step size parameter
-        # we have to re-use the precision as the step size for now.
+        if self._temp_target_temperature_step is not None:
+            return self._temp_target_temperature_step
+        # if a target_temperature_step is not defined, fallback to equal the precision
         return self.precision
     
     @property
