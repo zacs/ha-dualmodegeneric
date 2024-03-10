@@ -441,7 +441,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                     self._target_temp_high = self.max_temp
                     self._target_temp_low = self.min_temp
                     _LOGGER.warning(
-                        "Undefined target temperature rang," "falling back to %s to %s",
+                        "Undefined target temperature range," "falling back to %s to %s",
                         self._min_temp,
                         self._max_temp,
                     )
