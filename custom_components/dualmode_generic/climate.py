@@ -272,6 +272,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.heater_entity_id = heater_entity_id
         self.cooler_entity_id = cooler_entity_id
         self.sensor_entity_id = sensor_entity_id
+        self.humidity_sensor_entity_id = humidity_sensor_entity_id
         self.fan_entity_id = fan_entity_id
         self.fan_behavior = fan_behavior
         self.dryer_entity_id = dryer_entity_id
@@ -352,7 +353,6 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._away_temp_heater = away_temp_heater
         self._away_temp_cooler = away_temp_cooler
         self._is_away = False
-        self.humidity_sensor_entity_id = humidity_sensor_entity_id
 
     async def async_added_to_hass(self):
         """Run when entity about to be added."""
@@ -424,7 +424,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                         STATE_UNAVAILABLE,
                         STATE_UNKNOWN,
                 ):
-                    self._async_update_temp(humidity_sensor_state)
+                    self._async_update_humidity(humidity_sensor_state)
 
         if self.hass.state == CoreState.running:
             _async_startup()
