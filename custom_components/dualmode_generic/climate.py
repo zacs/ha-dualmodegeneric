@@ -592,7 +592,17 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     @property
     def target_temperature(self):
-        """Return the temperature we try to reach."""
+        """
+        Return the temperature we try to reach.
+
+        We return None in modes where we either need high and low target temperatures
+        or when we are in fan only mode with neutral fan behavior. As in such a case the single target temperature
+        is not needed and only clutters the UI.
+        """
+        if self._hvac_mode == HVAC_MODE_FAN_ONLY and self.fan_behavior == FAN_MODE_NEUTRAL:
+            return None
+        if self._hvac_mode == HVAC_MODE_DRY and self.dryer_behavior == DRYER_MODE_NEUTRAL:
+            return None
         if self._hvac_mode != HVAC_MODE_HEAT_COOL:
             return self._target_temp
         else:
@@ -600,13 +610,27 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     @property
     def target_temperature_high(self):
-        """Return the upper temperature we try to reach when in range mode."""
-        return self._target_temp_high
+        """
+        Return the upper temperature we try to reach when in range mode.
+
+        We return None in modes where we don't need high and low target temperatures.
+        """
+        if self._hvac_mode == HVAC_MODE_HEAT_COOL:
+            return self._target_temp_high
+        else:
+            return None
 
     @property
     def target_temperature_low(self):
-        """Return the lower temperature we try to reach when in range mode."""
-        return self._target_temp_low
+        """
+        Return the lower temperature we try to reach when in range mode.
+
+        We return None in modes where we don't need high and low target temperatures.
+        """
+        if self._hvac_mode == HVAC_MODE_HEAT_COOL:
+            return self._target_temp_low
+        else:
+            return None
 
     @property
     def hvac_modes(self):
