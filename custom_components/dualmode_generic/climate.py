@@ -74,6 +74,8 @@ CURRENT_HVAC_OFF = HVACAction.OFF
 SUPPORT_TARGET_TEMPERATURE = ClimateEntityFeature.TARGET_TEMPERATURE
 SUPPORT_TARGET_TEMPERATURE_RANGE = ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
 SUPPORT_PRESET_MODE = ClimateEntityFeature.PRESET_MODE
+SUPPORT_TURN_ON = ClimateEntityFeature.TURN_ON
+SUPPORT_TURN_OFF = ClimateEntityFeature.TURN_OFF
 # END OF CONSTANTS
 
 
@@ -104,7 +106,7 @@ CONF_AWAY_TEMP_HEATER = "away_temp_heater"
 CONF_AWAY_TEMP_COOLER = "away_temp_cooler"
 CONF_PRECISION = "precision"
 CONF_TEMP_STEP = "target_temp_step"
-SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
+SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE | SUPPORT_TURN_ON | SUPPORT_TURN_OFF
 
 CONF_ENABLE_HEAT_COOL = "enable_heat_cool"
 
@@ -301,6 +303,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._hot_tolerance = hot_tolerance
         self._keep_alive = keep_alive
         self._hvac_mode = initial_hvac_mode
+        self._initial_hvac_mode = initial_hvac_mode
+        self.startup_hvac_mode = initial_hvac_mode
         self._saved_target_temp = target_temp or away_temp or (away_temp_heater and away_temp_cooler)
         self._temp_precision = precision
         self._temp_target_temperature_step = target_temperature_step
@@ -622,6 +626,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set hvac mode."""
+
+        # Save the current mode so that we can restore it later when calling turn_on
+        if hvac_mode != HVAC_MODE_OFF:
+            self.startup_hvac_mode = self.hvac_mode
+        else:
+            self.startup_hvac_mode = self._hvac_mode
+
+        # Take action according to selected HVAC_MODE
         if hvac_mode == HVAC_MODE_HEAT:
             self._target_temp = self._target_temp_low
             self._hvac_mode = HVAC_MODE_HEAT
@@ -714,6 +726,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._target_temp_high = temp_high
         await self._async_control_heating(force=True)
         self.async_write_ha_state()
+
+    async def async_turn_on(self) -> None:
+        """Turn on."""
+        await self.async_set_hvac_mode(self.startup_hvac_mode)
+
+    async def async_turn_off(self) -> None:
+        """Turn off."""
+        await self.async_set_hvac_mode(HVAC_MODE_OFF)
 
     @property
     def min_temp(self):
