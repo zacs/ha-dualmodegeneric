@@ -74,6 +74,8 @@ CURRENT_HVAC_OFF = HVACAction.OFF
 SUPPORT_TARGET_TEMPERATURE = ClimateEntityFeature.TARGET_TEMPERATURE
 SUPPORT_TARGET_TEMPERATURE_RANGE = ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
 SUPPORT_PRESET_MODE = ClimateEntityFeature.PRESET_MODE
+SUPPORT_TURN_ON = ClimateEntityFeature.TURN_ON
+SUPPORT_TURN_OFF = ClimateEntityFeature.TURN_OFF
 # END OF CONSTANTS
 
 
@@ -104,7 +106,7 @@ CONF_AWAY_TEMP_HEATER = "away_temp_heater"
 CONF_AWAY_TEMP_COOLER = "away_temp_cooler"
 CONF_PRECISION = "precision"
 CONF_TEMP_STEP = "target_temp_step"
-SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
+SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE | SUPPORT_TURN_ON | SUPPORT_TURN_OFF
 
 CONF_ENABLE_HEAT_COOL = "enable_heat_cool"
 
@@ -270,6 +272,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.heater_entity_id = heater_entity_id
         self.cooler_entity_id = cooler_entity_id
         self.sensor_entity_id = sensor_entity_id
+        self.humidity_sensor_entity_id = humidity_sensor_entity_id
         self.fan_entity_id = fan_entity_id
         self.fan_behavior = fan_behavior
         self.dryer_entity_id = dryer_entity_id
@@ -301,6 +304,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._hot_tolerance = hot_tolerance
         self._keep_alive = keep_alive
         self._hvac_mode = initial_hvac_mode
+        self._initial_hvac_mode = initial_hvac_mode
+        self.startup_hvac_mode = initial_hvac_mode
         self._saved_target_temp = target_temp or away_temp or (away_temp_heater and away_temp_cooler)
         self._temp_precision = precision
         self._temp_target_temperature_step = target_temperature_step
@@ -348,7 +353,6 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._away_temp_heater = away_temp_heater
         self._away_temp_cooler = away_temp_cooler
         self._is_away = False
-        self.humidity_sensor_entity_id = humidity_sensor_entity_id
 
     async def async_added_to_hass(self):
         """Run when entity about to be added."""
@@ -420,7 +424,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                         STATE_UNAVAILABLE,
                         STATE_UNKNOWN,
                 ):
-                    self._async_update_temp(humidity_sensor_state)
+                    self._async_update_humidity(humidity_sensor_state)
 
         if self.hass.state == CoreState.running:
             _async_startup()
@@ -588,7 +592,17 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     @property
     def target_temperature(self):
-        """Return the temperature we try to reach."""
+        """
+        Return the temperature we try to reach.
+
+        We return None in modes where we either need high and low target temperatures
+        or when we are in fan only mode with neutral fan behavior. As in such a case the single target temperature
+        is not needed and only clutters the UI.
+        """
+        if self._hvac_mode == HVAC_MODE_FAN_ONLY and self.fan_behavior == FAN_MODE_NEUTRAL:
+            return None
+        if self._hvac_mode == HVAC_MODE_DRY and self.dryer_behavior == DRYER_MODE_NEUTRAL:
+            return None
         if self._hvac_mode != HVAC_MODE_HEAT_COOL:
             return self._target_temp
         else:
@@ -596,13 +610,27 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     @property
     def target_temperature_high(self):
-        """Return the upper temperature we try to reach when in range mode."""
-        return self._target_temp_high
+        """
+        Return the upper temperature we try to reach when in range mode.
+
+        We return None in modes where we don't need high and low target temperatures.
+        """
+        if self._hvac_mode == HVAC_MODE_HEAT_COOL:
+            return self._target_temp_high
+        else:
+            return None
 
     @property
     def target_temperature_low(self):
-        """Return the lower temperature we try to reach when in range mode."""
-        return self._target_temp_low
+        """
+        Return the lower temperature we try to reach when in range mode.
+
+        We return None in modes where we don't need high and low target temperatures.
+        """
+        if self._hvac_mode == HVAC_MODE_HEAT_COOL:
+            return self._target_temp_low
+        else:
+            return None
 
     @property
     def hvac_modes(self):
@@ -622,6 +650,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set hvac mode."""
+
+        # Save the current mode so that we can restore it later when calling turn_on
+        if hvac_mode != HVAC_MODE_OFF:
+            self.startup_hvac_mode = self.hvac_mode
+        else:
+            self.startup_hvac_mode = self._hvac_mode
+
+        # Take action according to selected HVAC_MODE
         if hvac_mode == HVAC_MODE_HEAT:
             self._target_temp = self._target_temp_low
             self._hvac_mode = HVAC_MODE_HEAT
@@ -714,6 +750,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._target_temp_high = temp_high
         await self._async_control_heating(force=True)
         self.async_write_ha_state()
+
+    async def async_turn_on(self) -> None:
+        """Turn on."""
+        await self.async_set_hvac_mode(self.startup_hvac_mode)
+
+    async def async_turn_off(self) -> None:
+        """Turn off."""
+        await self.async_set_hvac_mode(HVAC_MODE_OFF)
 
     @property
     def min_temp(self):
