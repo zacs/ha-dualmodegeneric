@@ -859,81 +859,98 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                     if not long_enough:
                         return
 
-            if self._is_device_active:  # when to turn off
-                too_cold = self._is_too_cold_deactivate()
-                too_hot = self._is_too_hot_deactivate()
-                is_comfortable = self._is_within_range_deactivate()
-                if too_cold and (self._hvac_mode == HVAC_MODE_COOL):
-                    _LOGGER.info("Too cold! Turning off cooler %s", self.cooler_entity_id)
-                    await self._async_cooler_turn_off()
-                elif too_hot and (self._hvac_mode == HVAC_MODE_HEAT):
-                    _LOGGER.info("Too hot! Turning off heater %s", self.heater_entity_id)
-                    await self._async_heater_turn_off()
-                elif is_comfortable and (self._hvac_mode == HVAC_MODE_HEAT_COOL):
-                    _LOGGER.info("Just right! Turning off heater %s", self.heater_entity_id)
-                    await self._async_heater_turn_off()
-                    _LOGGER.info("Just right! Turning off cooler %s", self.cooler_entity_id)
-                    await self._async_cooler_turn_off()
-                elif self._hvac_mode == HVAC_MODE_FAN_ONLY:
-                    if too_cold and self.fan_behavior == FAN_MODE_COOL:
-                        _LOGGER.info("Turning off fan %s", self.fan_entity_id)
-                        await self._async_fan_turn_off()
-                    elif too_hot and self.fan_behavior == FAN_MODE_HEAT:
-                        _LOGGER.info("Turning off fan %s", self.fan_entity_id)
-                        await self._async_fan_turn_off()
-                elif self._hvac_mode == HVAC_MODE_DRY:
-                    if too_cold and self.dryer_behavior == DRYER_MODE_COOL:
-                        _LOGGER.info("Turning off dehumidifier %s", self.dryer_entity_id)
-                        await self._async_dryer_turn_off()
-                    elif too_hot and self.dryer_behavior == DRYER_MODE_HEAT:
-                        _LOGGER.info("Turning off dehumidifier %s", self.dryer_entity_id)
-                        await self._async_dryer_turn_off()
-                elif time is not None:
-                    # The time argument is passed only in keep-alive case
-                    _LOGGER.info(
-                        "Keep-alive - Turning on %s", active_entity
-                    )
-                    if self._hvac_mode == HVAC_MODE_COOL:
-                        await self._async_cooler_turn_on()
-                    elif self._hvac_mode == HVAC_MODE_HEAT:
+            if self._is_device_active:  # when to turn off (or switch modes)
+                if self._hvac_mode == HVAC_MODE_HEAT_COOL:
+                    is_comfortable = self._is_within_range_deactivate()
+                    too_cold_overshot = self._is_too_cold_activate()
+                    too_hot_overshot = self._is_too_hot_activate()
+                    if is_comfortable:
+                        _LOGGER.info("Just right! Turning off heater %s", self.heater_entity_id)
+                        await self._async_heater_turn_off()
+                        _LOGGER.info("Just right! Turning off cooler %s", self.cooler_entity_id)
+                        await self._async_cooler_turn_off()
+                    elif too_cold_overshot:
+                        _LOGGER.info(
+                            "Overshot lower bound! Turning off cooler %s and turning on heater %s",
+                            self.cooler_entity_id,
+                            self.heater_entity_id,
+                        )
+                        await self._async_cooler_turn_off()
                         await self._async_heater_turn_on()
-                    elif self._hvac_mode == HVAC_MODE_FAN_ONLY:
-                        await self._async_fan_turn_on()
-                    elif self._hvac_mode == HVAC_MODE_DRY:
-                        await self._async_dryer_turn_on()
-                    elif self._hvac_mode == HVAC_MODE_HEAT_COOL:
+                    elif too_hot_overshot:
+                        _LOGGER.info(
+                            "Overshot upper bound! Turning on cooler %s and turning off heater %s",
+                            self.cooler_entity_id,
+                            self.heater_entity_id,
+                        )
+                        await self._async_heater_turn_off()
+                        await self._async_cooler_turn_on()
+                    elif time is not None:
+                        _LOGGER.info("Keep-alive - Turning on %s", active_entity)
                         if self.hass.states.is_state(self.heater_entity_id, STATE_ON):
                             await self._async_heater_turn_on()
                         elif self.hass.states.is_state(self.cooler_entity_id, STATE_ON):
                             await self._async_cooler_turn_on()
+                else:
+                    too_cold = self._is_too_cold_deactivate()
+                    too_hot = self._is_too_hot_deactivate()
+                    if too_cold and (self._hvac_mode == HVAC_MODE_COOL):
+                        _LOGGER.info("Too cold! Turning off cooler %s", self.cooler_entity_id)
+                        await self._async_cooler_turn_off()
+                    elif too_hot and (self._hvac_mode == HVAC_MODE_HEAT):
+                        _LOGGER.info("Too hot! Turning off heater %s", self.heater_entity_id)
+                        await self._async_heater_turn_off()
+                    elif self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                        if (
+                            (too_cold and self.fan_behavior == FAN_MODE_COOL)
+                            or (too_hot and self.fan_behavior == FAN_MODE_HEAT)
+                        ):
+                            _LOGGER.info("Turning off fan %s", self.fan_entity_id)
+                            await self._async_fan_turn_off()
+                    elif self._hvac_mode == HVAC_MODE_DRY:
+                        if (
+                            (too_cold and self.dryer_behavior == DRYER_MODE_COOL)
+                            or (too_hot and self.dryer_behavior == DRYER_MODE_HEAT)
+                        ):
+                            _LOGGER.info("Turning off dehumidifier %s", self.dryer_entity_id)
+                            await self._async_dryer_turn_off()
+                    elif time is not None:
+                    # The time argument is passed only in keep-alive case
+                        _LOGGER.info("Keep-alive - Turning on %s", active_entity)
+                        if self._hvac_mode == HVAC_MODE_COOL:
+                            await self._async_cooler_turn_on()
+                        elif self._hvac_mode == HVAC_MODE_HEAT:
+                            await self._async_heater_turn_on()
+                        elif self._hvac_mode == HVAC_MODE_FAN_ONLY:
+                            await self._async_fan_turn_on()
+                        elif self._hvac_mode == HVAC_MODE_DRY:
+                            await self._async_dryer_turn_on()
             else:  # when to turn on
                 too_cold = self._is_too_cold_activate()
                 too_hot = self._is_too_hot_activate()
-                if too_hot and (self._hvac_mode == HVAC_MODE_COOL or self._hvac_mode == HVAC_MODE_HEAT_COOL):
+                if too_hot and self._hvac_mode in [HVAC_MODE_COOL, HVAC_MODE_HEAT_COOL]:
                     _LOGGER.info("Turning on cooler %s", self.cooler_entity_id)
                     await self._async_cooler_turn_on()
-                elif too_cold and (self._hvac_mode == HVAC_MODE_HEAT or self._hvac_mode == HVAC_MODE_HEAT_COOL):
+                elif too_cold and self._hvac_mode in [HVAC_MODE_HEAT, HVAC_MODE_HEAT_COOL]:
                     _LOGGER.info("Turning on heater %s", self.heater_entity_id)
                     await self._async_heater_turn_on()
                 elif self._hvac_mode == HVAC_MODE_FAN_ONLY:
-                    if too_hot and self.fan_behavior == FAN_MODE_COOL:
-                        _LOGGER.info("Turning on fan %s", self.fan_entity_id)
-                        await self._async_fan_turn_on()
-                    elif too_cold and self.fan_behavior == FAN_MODE_HEAT:
+                    if (
+                        (too_hot and self.fan_behavior == FAN_MODE_COOL)
+                        or (too_cold and self.fan_behavior == FAN_MODE_HEAT)
+                    ):
                         _LOGGER.info("Turning on fan %s", self.fan_entity_id)
                         await self._async_fan_turn_on()
                 elif self._hvac_mode == HVAC_MODE_DRY:
-                    if too_hot and self.dryer_behavior == DRYER_MODE_COOL:
-                        _LOGGER.info("Turning on dehumidifier %s", self.dryer_entity_id)
-                        await self._async_dryer_turn_on()
-                    elif too_cold and self.dryer_behavior == DRYER_MODE_HEAT:
+                    if (
+                        (too_hot and self.dryer_behavior == DRYER_MODE_COOL)
+                        or (too_cold and self.dryer_behavior == DRYER_MODE_HEAT)
+                    ):
                         _LOGGER.info("Turning on dehumidifier %s", self.dryer_entity_id)
                         await self._async_dryer_turn_on()
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
-                    _LOGGER.info(
-                        "Keep-alive - Turning off %s", active_entity
-                    )
+                    _LOGGER.info("Keep-alive - Turning off %s", active_entity)
                     if self._hvac_mode == HVAC_MODE_COOL:
                         await self._async_cooler_turn_off()
                     elif self._hvac_mode == HVAC_MODE_HEAT:
