@@ -1,8 +1,9 @@
 {
     "domain": "dualmode_generic",
-    "name": "Dual-Mode Generic Thermostat",
+    "name": "Multi-Mode Generic Thermostat",
     "documentation": "https://github.com/zacs/ha-dualmodegeneric",
-    "version": "0.2",
+    "issue_tracker": "https://github.com/zacs/ha-dualmodegeneric/issues",
+    "version": "0.2.1",
     "dependencies": [],
     "codeowners": ["@zacs"],
     "requirements": []
