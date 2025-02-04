@@ -851,18 +851,18 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
             # Check new mode against previous HVAC mode and
             if previous_mode is not None and previous_mode != self._hvac_mode:
-                if previous_mode == HVAC_MODE_COOL:
+                if previous_mode == HVAC_MODE_COOL and REVERSE_CYCLE_IS_COOLER not in self.reverse_cycle:
                     await self._async_cooler_turn_off()
-                elif previous_mode == HVAC_MODE_HEAT:
+                elif previous_mode == HVAC_MODE_HEAT and REVERSE_CYCLE_IS_HEATER not in self.reverse_cycle:
                     await self._async_heater_turn_off()
-                elif previous_mode == HVAC_MODE_FAN_ONLY:
+                elif previous_mode == HVAC_MODE_FAN_ONLY and REVERSE_CYCLE_IS_FAN not in self.reverse_cycle:
                     await self._async_fan_turn_off()
-                elif previous_mode == HVAC_MODE_DRY:
+                elif previous_mode == HVAC_MODE_DRY and REVERSE_CYCLE_IS_DRYER not in self.reverse_cycle:
                     await self._async_dryer_turn_off()
                 elif previous_mode == HVAC_MODE_HEAT_COOL:
-                    if self._hvac_mode == HVAC_MODE_COOL:
+                    if self._hvac_mode == HVAC_MODE_COOL and REVERSE_CYCLE_IS_COOLER not in self.reverse_cycle:
                         await self._async_heater_turn_off()
-                    elif self._hvac_mode == HVAC_MODE_HEAT:
+                    elif self._hvac_mode == HVAC_MODE_HEAT and REVERSE_CYCLE_IS_HEATER not in self.reverse_cycle:
                         await self._async_cooler_turn_off()
 
             # Thermostat is running and in HEAT_COOL mode
