@@ -860,9 +860,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 elif previous_mode == HVAC_MODE_DRY and REVERSE_CYCLE_IS_DRYER not in self.reverse_cycle:
                     await self._async_dryer_turn_off()
                 elif previous_mode == HVAC_MODE_HEAT_COOL:
-                    if self._hvac_mode == HVAC_MODE_COOL and REVERSE_CYCLE_IS_COOLER not in self.reverse_cycle:
+                    if self._hvac_mode == HVAC_MODE_COOL and REVERSE_CYCLE_IS_HEATER not in self.reverse_cycle:
                         await self._async_heater_turn_off()
-                    elif self._hvac_mode == HVAC_MODE_HEAT and REVERSE_CYCLE_IS_HEATER not in self.reverse_cycle:
+                    elif self._hvac_mode == HVAC_MODE_HEAT and REVERSE_CYCLE_IS_COOLER not in self.reverse_cycle:
                         await self._async_cooler_turn_off()
 
             # Thermostat is running and in HEAT_COOL mode
