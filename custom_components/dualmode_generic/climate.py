@@ -800,14 +800,17 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
     async def _async_control_heating(self, time=None, force=False, previous_mode: HVACMode=None):
         """Check if we need to turn heating on or off."""
         async with self._temp_lock:
-            if not self._active and None not in (self._cur_temp, self._target_temp):
-                self._active = True
-                _LOGGER.info(
-                    "Obtained current and target temperature. "
-                    "Generic Dual-mode thermostat active. %s, %s",
-                    self._cur_temp,
-                    self._target_temp,
-                )
+            if not self._active and self._cur_temp is not None:
+                if self._target_temp is not None or None not in (self._target_temp_high, self._target_temp_low):
+                    self._active = True
+                    _LOGGER.info(
+                        "Obtained current and target temperature(s). "
+                        "Generic Multi-mode thermostat active. Current: %s, Target: %s, Low: %s, High: %s",
+                        self._cur_temp,
+                        self._target_temp,
+                        self._target_temp_low,
+                        self._target_temp_high
+                    )
 
             if not self._active or self._hvac_mode == HVAC_MODE_OFF:
                 return
