@@ -144,7 +144,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_HEATER): cv.entity_id,
         vol.Optional(CONF_COOLER): cv.entity_id,
-        vol.Required(CONF_SENSOR): cv.entity_id,
+        vol.Optional(CONF_SENSOR): cv.entity_id,
         vol.Optional(CONF_HUMIDITY_SENSOR): cv.entity_id,
         vol.Optional(CONF_CONSENT_ENTITY): cv.entity_id,
         vol.Optional(CONF_TAMPER_ENTITY): cv.entity_id,
@@ -598,6 +598,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._command_climate_granted = self._extract_command_grant_from_state(command_state)
             if not self._command_climate_granted:
                 await self._async_turn_off_all_devices()
+            # If no explicit target_sensor is configured, seed the current temperature
+            # from the command climate's own reading.
+            if self.sensor_entity_id is None and command_state and command_state.state not in (
+                    STATE_UNAVAILABLE,
+                    STATE_UNKNOWN,
+            ):
+                self._async_update_temp_from_command_climate(command_state)
 
         if self._keep_alive:
             self.async_on_remove(
@@ -1132,6 +1139,21 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             return high
         return value
 
+    @callback
+    def _async_update_temp_from_command_climate(self, state):
+        """Update the current temperature from the command climate's own reading.
+
+        Reads the climate entity's `current_temperature` attribute (e.g. the device's
+        local_temperature). Used only when no explicit target_sensor is configured.
+        """
+        current = state.attributes.get("current_temperature")
+        if current is None:
+            return
+        try:
+            self._cur_temp = float(current)
+        except (ValueError, TypeError) as ex:
+            _LOGGER.error("Unable to read temperature from command climate: %s", ex)
+
     def _extract_command_grant_from_state(self, state):
         """Return True if the command climate grants operation (system_mode != off).
 
@@ -1166,6 +1188,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         if previous != self._command_climate_granted and not self._command_climate_granted:
             if self._is_device_active:
                 await self._async_turn_off_all_devices()
+
+        # 1b) Use the device's own temperature as the current temperature,
+        # but ONLY when no explicit target_sensor is configured (target_sensor wins,
+        # so the user can e.g. average it with another sensor).
+        if self.sensor_entity_id is None:
+            self._async_update_temp_from_command_climate(new_state)
 
         # 2) Sync the setpoint from the device, clamped into the configured limits
         device_setpoint = new_state.attributes.get(ATTR_TEMPERATURE)

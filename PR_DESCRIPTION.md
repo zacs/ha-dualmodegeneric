@@ -70,6 +70,8 @@ It is a layer that adds to `consent_entity`, the water guard, and `min_cycle_dur
 
 The mode choice (heat vs cool) always stays on the dual mode thermostat — the physical panel only provides on/off and a setpoint.
 
+When `command_climate` is configured, its own temperature reading (the climate entity's `current_temperature`) is used as the room temperature, so **`target_sensor` becomes optional**. If `target_sensor` is also configured, it takes priority (allowing e.g. averaging the panel reading with another sensor). At least one of `target_sensor` or `command_climate` must be configured. `target_sensor` was changed from required to optional accordingly.
+
 ### Optional heat/cool clamp limits (additive, backward compatible)
 
 | Key | Description |
@@ -89,7 +91,7 @@ Users can now configure the thermostat entirely from the Home Assistant UI:
 
 The setup wizard is structured in 5 sequential steps:
 
-1. **Base** — name, temperature sensor, humidity sensor
+1. **Base** — name, temperature sensor (optional), humidity sensor
 2. **Devices** — heater, cooler, fan, dryer, behaviors, reverse cycle, heat_cool mode
 3. **Temperature & Control** — targets, min/max, heat/cool clamp limits, tolerances, precision, step
 4. **Timing & Modes** — min cycle duration, keep-alive, initial mode, away temps, consent entity, tamper entity, command panel

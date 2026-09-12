@@ -6,7 +6,7 @@
                 "description": "Configura le impostazioni di base del termostato.",
                 "data": {
                     "name": "Nome",
-                    "target_sensor": "Sensore di temperatura",
+                    "target_sensor": "Sensore di temperatura (opzionale se è impostato un pannello di comando)",
                     "target_humidity_sensor": "Sensore di umidità (opzionale)"
                 }
             },

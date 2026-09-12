@@ -6,7 +6,7 @@
                 "description": "Configure the basic settings for the thermostat.",
                 "data": {
                     "name": "Name",
-                    "target_sensor": "Temperature sensor",
+                    "target_sensor": "Temperature sensor (optional if a command panel is set)",
                     "target_humidity_sensor": "Humidity sensor (optional)"
                 }
             },

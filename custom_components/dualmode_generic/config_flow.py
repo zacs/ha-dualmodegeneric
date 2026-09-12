@@ -131,7 +131,7 @@ class DualModeGenericConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required("name", default="Generic Thermostat"): selector.TextSelector(),
-                vol.Required("target_sensor"): SENSOR_SELECTOR,
+                vol.Optional("target_sensor"): SENSOR_SELECTOR,
                 vol.Optional("target_humidity_sensor"): SENSOR_SELECTOR,
             }
         )

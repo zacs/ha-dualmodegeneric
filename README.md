@@ -129,6 +129,10 @@ The heat/cool clamp limits are optional and additive (fully backward compatible)
 
 The mode choice (heat vs cool) always stays on the dual mode thermostat — the physical panel only provides on/off and a setpoint.
 
+### Temperature source
+
+When `command_climate` is configured, its own temperature reading (the climate entity's `current_temperature`, e.g. the device `local_temperature`) is used as the room temperature — so **`target_sensor` becomes optional**. If you configure `target_sensor` as well, it **takes priority** (useful if you want to average the panel reading with another sensor via a template/statistics sensor). At least one of `target_sensor` or `command_climate` must be configured.
+
 ### Example Config
 
 ```yaml
