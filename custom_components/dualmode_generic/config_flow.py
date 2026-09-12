@@ -256,6 +256,23 @@ class DualModeGenericOptionsFlow(config_entries.OptionsFlow):
             key, self._config_entry.data.get(key, default)
         )
 
+    def _merge_step_options(self, step_keys: list[str], user_input: dict[str, Any]) -> dict[str, Any]:
+        """Merge a step's submission into the existing options.
+
+        For every key owned by this step, take the submitted value when present,
+        otherwise write an explicit None tombstone. This lets a cleared/omitted
+        optional field actually remove the value: without a tombstone the old
+        option (or the original config_entry.data value) would reappear at setup.
+        Keys not owned by this step are preserved from the existing options.
+        """
+        merged = dict(self._config_entry.options)
+        for key in step_keys:
+            if key in user_input:
+                merged[key] = user_input[key]
+            else:
+                merged[key] = None
+        return merged
+
     # ---- Menu ----
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Show the options menu."""
@@ -268,8 +285,12 @@ class DualModeGenericOptionsFlow(config_entries.OptionsFlow):
     async def async_step_devices(self, user_input: dict[str, Any] | None = None):
         """Edit device entities and behaviors."""
         if user_input is not None:
+            keys = [
+                "heater", "cooler", "fan", "fan_behavior",
+                "dryer", "dryer_behavior", "reverse_cycle", "enable_heat_cool",
+            ]
             return self.async_create_entry(
-                title="", data={**self._config_entry.options, **user_input}
+                title="", data=self._merge_step_options(keys, user_input)
             )
 
         schema = vol.Schema(
@@ -290,8 +311,14 @@ class DualModeGenericOptionsFlow(config_entries.OptionsFlow):
     async def async_step_temperature(self, user_input: dict[str, Any] | None = None):
         """Edit temperature parameters."""
         if user_input is not None:
+            keys = [
+                "target_temp", "target_temp_high", "target_temp_low",
+                "min_temp", "max_temp",
+                "min_heat_temp", "max_heat_temp", "min_cool_temp", "max_cool_temp",
+                "cold_tolerance", "hot_tolerance", "precision", "target_temp_step",
+            ]
             return self.async_create_entry(
-                title="", data={**self._config_entry.options, **user_input}
+                title="", data=self._merge_step_options(keys, user_input)
             )
 
         schema = vol.Schema(
@@ -317,8 +344,13 @@ class DualModeGenericOptionsFlow(config_entries.OptionsFlow):
     async def async_step_timing(self, user_input: dict[str, Any] | None = None):
         """Edit timing and mode options."""
         if user_input is not None:
+            keys = [
+                "min_cycle_duration", "keep_alive", "initial_hvac_mode",
+                "away_temp", "away_temp_heater", "away_temp_cooler",
+                "consent_entity", "tamper_entity", "command_climate",
+            ]
             return self.async_create_entry(
-                title="", data={**self._config_entry.options, **user_input}
+                title="", data=self._merge_step_options(keys, user_input)
             )
 
         schema = vol.Schema(
@@ -340,8 +372,13 @@ class DualModeGenericOptionsFlow(config_entries.OptionsFlow):
     async def async_step_water_guard(self, user_input: dict[str, Any] | None = None):
         """Edit water temperature guard options."""
         if user_input is not None:
+            keys = [
+                "water_sensor", "water_setpoint_heat", "water_setpoint_cool",
+                "water_setpoint_heat_entity", "water_setpoint_cool_entity",
+                "water_tolerance",
+            ]
             return self.async_create_entry(
-                title="", data={**self._config_entry.options, **user_input}
+                title="", data=self._merge_step_options(keys, user_input)
             )
 
         schema = vol.Schema(

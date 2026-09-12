@@ -292,8 +292,15 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the dual mode generic thermostat from a config entry (UI-based)."""
-    # Merge data and options — options take priority for fields that can be changed
+    # Merge data and options — options take priority for fields that can be changed.
+    # The options flow writes explicit None tombstones for cleared fields, so a None
+    # value means "cleared" and must not fall back to the data-layer value.
     config = {**config_entry.data, **config_entry.options}
+
+    def get_or(key, default=None):
+        """Return the config value, treating an explicit None tombstone as the default."""
+        value = config.get(key, default)
+        return default if value is None else value
 
     unit = hass.config.units.temperature_unit
 
@@ -326,23 +333,23 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     async_add_entities(
         [
             DualModeGenericThermostat(
-                config.get("name", "Generic Thermostat"),
+                get_or("name", "Generic Thermostat"),
                 config.get("heater"),
                 config.get("cooler"),
                 config.get("target_sensor"),
                 config.get("fan"),
-                config.get("fan_behavior", "neutral"),
+                get_or("fan_behavior", "neutral"),
                 config.get("dryer"),
-                config.get("dryer_behavior", "neutral"),
-                config.get("reverse_cycle", []),
+                get_or("dryer_behavior", "neutral"),
+                get_or("reverse_cycle", []),
                 config.get("min_temp"),
                 config.get("max_temp"),
                 config.get("target_temp"),
                 config.get("target_temp_high"),
                 config.get("target_temp_low"),
                 min_cycle_duration,
-                config.get("cold_tolerance", 0.3),
-                config.get("hot_tolerance", 0.3),
+                get_or("cold_tolerance", 0.3),
+                get_or("hot_tolerance", 0.3),
                 keep_alive,
                 config.get("initial_hvac_mode"),
                 config.get("away_temp"),
@@ -350,7 +357,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 config.get("away_temp_cooler"),
                 parse_precision(config.get("precision")),
                 parse_precision(config.get("target_temp_step")),
-                config.get("enable_heat_cool", False),
+                get_or("enable_heat_cool", False),
                 unit,
                 config.get("unique_id"),
                 config.get("target_humidity_sensor"),
@@ -360,7 +367,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 config.get("water_setpoint_cool"),
                 config.get("water_setpoint_heat_entity"),
                 config.get("water_setpoint_cool_entity"),
-                config.get("water_tolerance", 0.3),
+                get_or("water_tolerance", 0.3),
                 config.get("tamper_entity"),
                 config.get("command_climate"),
                 config.get("min_heat_temp"),
@@ -598,8 +605,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             self._command_climate_granted = self._extract_command_grant_from_state(command_state)
             if not self._command_climate_granted:
                 await self._async_turn_off_all_devices()
-            # If no explicit target_sensor is configured, seed the current temperature
-            # from the command climate's own reading.
+            # If no explicit target_sensor is configured, seed the current
+            # temperature from the command climate's own reading.
             if self.sensor_entity_id is None and command_state and command_state.state not in (
                     STATE_UNAVAILABLE,
                     STATE_UNKNOWN,
@@ -677,6 +684,23 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if old_state.attributes.get(ATTR_PRESET_MODE) == PRESET_AWAY:
                 self._is_away = True
 
+        # After state restoration, let the command panel's current setpoint drive the
+        # target. This runs post-restore so it isn't clobbered by the restored value,
+        # and so a panel whose state was already established before load takes effect
+        # without waiting for the next state_changed event.
+        if self.command_climate_entity_id:
+            command_state = self.hass.states.get(self.command_climate_entity_id)
+            if command_state and command_state.state not in (
+                    STATE_UNAVAILABLE,
+                    STATE_UNKNOWN,
+            ):
+                command_setpoint = command_state.attributes.get(ATTR_TEMPERATURE)
+                if command_setpoint is not None and self._hvac_mode in (HVAC_MODE_HEAT, HVAC_MODE_COOL):
+                    try:
+                        self._target_temp = self._clamp_command_setpoint(float(command_setpoint))
+                    except (ValueError, TypeError):
+                        pass
+
         # We only want to update the sensors again if the state has already been restored
         @callback
         def _async_startup(event=None):
@@ -725,6 +749,18 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             _async_startup()
         else:
             self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, _async_startup)
+
+    async def async_will_remove_from_hass(self):
+        """Run when the entity is about to be removed.
+
+        Turn off every controlled actuator before unloading. On a config-entry
+        reload (e.g. after changing a device mapping in the options), the entity
+        is removed and re-created; the new instance would no longer know the old
+        heater/cooler/fan/dryer entity IDs, so a still-ON actuator could be left
+        stranded. Shutting them down here prevents that.
+        """
+        await self._async_turn_off_all_devices()
+        await super().async_will_remove_from_hass()
 
     @property
     def should_poll(self):
@@ -1178,35 +1214,51 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         running_state is ignored (the device relay is not wired to anything).
         """
         new_state = event.data.get("new_state")
-        if new_state is None or new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            # Ignore unavailable device — keep last known state and keep working via UI
-            return
 
-        # 1) On/off acts as consent — never touches the dual_mode HVAC mode
-        previous = self._command_climate_granted
+        # Track whether something we care about actually changed, so we only force
+        # control (bypassing min_cycle_duration) on meaningful changes. Climate
+        # entities emit state_changed for unrelated attributes (screen brightness,
+        # schedules, etc.) that must not switch equipment early.
+        meaningful_change = False
+
+        # 1) On/off acts as consent — never touches the dual_mode HVAC mode.
+        # Unavailable/unknown is treated as GRANTED so the thermostat keeps working
+        # from the UI when the physical panel is offline (see documented behavior).
+        previous_grant = self._command_climate_granted
         self._command_climate_granted = self._extract_command_grant_from_state(new_state)
-        if previous != self._command_climate_granted and not self._command_climate_granted:
-            if self._is_device_active:
+        if previous_grant != self._command_climate_granted:
+            meaningful_change = True
+            if not self._command_climate_granted and self._is_device_active:
                 await self._async_turn_off_all_devices()
 
-        # 1b) Use the device's own temperature as the current temperature,
-        # but ONLY when no explicit target_sensor is configured (target_sensor wins,
-        # so the user can e.g. average it with another sensor).
-        if self.sensor_entity_id is None:
-            self._async_update_temp_from_command_climate(new_state)
+        # If the device is unavailable, don't try to read temperature/setpoint from it.
+        if new_state is not None and new_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            # 1b) Use the device's own temperature as current temperature, but ONLY
+            # when no explicit target_sensor is configured (target_sensor wins, so the
+            # user can e.g. average it with another sensor).
+            if self.sensor_entity_id is None:
+                previous_temp = self._cur_temp
+                self._async_update_temp_from_command_climate(new_state)
+                if self._cur_temp != previous_temp:
+                    meaningful_change = True
 
-        # 2) Sync the setpoint from the device, clamped into the configured limits
-        device_setpoint = new_state.attributes.get(ATTR_TEMPERATURE)
-        if device_setpoint is not None and self._hvac_mode in (HVAC_MODE_HEAT, HVAC_MODE_COOL):
-            try:
-                clamped = self._clamp_command_setpoint(float(device_setpoint))
-            except (ValueError, TypeError):
-                clamped = None
-            if clamped is not None and clamped != self._target_temp:
-                self._target_temp = clamped
+            # 2) Sync the setpoint from the device, clamped into the configured limits
+            device_setpoint = new_state.attributes.get(ATTR_TEMPERATURE)
+            if device_setpoint is not None and self._hvac_mode in (HVAC_MODE_HEAT, HVAC_MODE_COOL):
+                try:
+                    clamped = self._clamp_command_setpoint(float(device_setpoint))
+                except (ValueError, TypeError):
+                    clamped = None
+                if clamped is not None and clamped != self._target_temp:
+                    self._target_temp = clamped
+                    meaningful_change = True
 
-        # Re-run control (handles both resume-on-grant and setpoint change)
-        await self._async_control_heating(force=True)
+        # Only force control (bypassing min_cycle_duration) on a meaningful change.
+        # Otherwise run normal control so cycle timing is respected.
+        if meaningful_change:
+            await self._async_control_heating(force=True)
+        else:
+            await self._async_control_heating()
         self.async_write_ha_state()
 
     # ---------------------------------------------------------------------------
