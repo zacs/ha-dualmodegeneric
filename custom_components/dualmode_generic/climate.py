@@ -97,6 +97,12 @@ CONF_REVERSE_CYCLE = "reverse_cycle"
 CONF_SENSOR = "target_sensor"
 CONF_HUMIDITY_SENSOR = "target_humidity_sensor"
 CONF_CONSENT_ENTITY = "consent_entity"  # Optional entity to control thermostat enable/disable
+CONF_TAMPER_ENTITY = "tamper_entity"  # Optional entity that, when ON, forces the thermostat inactive (inverse consent)
+CONF_COMMAND_CLIMATE = "command_climate"  # Optional physical climate device used as a command panel (on/off + setpoint)
+CONF_MIN_HEAT_TEMP = "min_heat_temp"  # Optional lower clamp for heating setpoint synced from command_climate
+CONF_MAX_HEAT_TEMP = "max_heat_temp"  # Optional upper clamp for heating setpoint synced from command_climate
+CONF_MIN_COOL_TEMP = "min_cool_temp"  # Optional lower clamp for cooling setpoint synced from command_climate
+CONF_MAX_COOL_TEMP = "max_cool_temp"  # Optional upper clamp for cooling setpoint synced from command_climate
 CONF_WATER_SENSOR = "water_sensor"  # Optional water supply temperature sensor
 CONF_WATER_SETPOINT_HEAT = "water_setpoint_heat"  # Fixed water temp setpoint for heating (water must be >= this)
 CONF_WATER_SETPOINT_COOL = "water_setpoint_cool"  # Fixed water temp setpoint for cooling (water must be <= this)
@@ -141,6 +147,12 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_SENSOR): cv.entity_id,
         vol.Optional(CONF_HUMIDITY_SENSOR): cv.entity_id,
         vol.Optional(CONF_CONSENT_ENTITY): cv.entity_id,
+        vol.Optional(CONF_TAMPER_ENTITY): cv.entity_id,
+        vol.Optional(CONF_COMMAND_CLIMATE): cv.entity_id,
+        vol.Optional(CONF_MIN_HEAT_TEMP): vol.Coerce(float),
+        vol.Optional(CONF_MAX_HEAT_TEMP): vol.Coerce(float),
+        vol.Optional(CONF_MIN_COOL_TEMP): vol.Coerce(float),
+        vol.Optional(CONF_MAX_COOL_TEMP): vol.Coerce(float),
         vol.Optional(CONF_FAN): cv.entity_id,
         vol.Optional(CONF_FAN_BEHAVIOR, default=FAN_MODE_NEUTRAL): vol.In(
             [FAN_MODE_COOL, FAN_MODE_HEAT, FAN_MODE_NEUTRAL]),
@@ -216,6 +228,12 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     unique_id = config.get(CONF_UNIQUE_ID)
     humidity_sensor_entity_id = config.get(CONF_HUMIDITY_SENSOR)
     consent_entity_id = config.get(CONF_CONSENT_ENTITY)
+    tamper_entity_id = config.get(CONF_TAMPER_ENTITY)
+    command_climate_entity_id = config.get(CONF_COMMAND_CLIMATE)
+    min_heat_temp = config.get(CONF_MIN_HEAT_TEMP)
+    max_heat_temp = config.get(CONF_MAX_HEAT_TEMP)
+    min_cool_temp = config.get(CONF_MIN_COOL_TEMP)
+    max_cool_temp = config.get(CONF_MAX_COOL_TEMP)
     water_sensor_entity_id = config.get(CONF_WATER_SENSOR)
     water_setpoint_heat = config.get(CONF_WATER_SETPOINT_HEAT)
     water_setpoint_cool = config.get(CONF_WATER_SETPOINT_COOL)
@@ -261,6 +279,12 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 water_setpoint_heat_entity_id,
                 water_setpoint_cool_entity_id,
                 water_tolerance,
+                tamper_entity_id,
+                command_climate_entity_id,
+                min_heat_temp,
+                max_heat_temp,
+                min_cool_temp,
+                max_cool_temp,
             )
         ]
     )
@@ -337,6 +361,12 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 config.get("water_setpoint_heat_entity"),
                 config.get("water_setpoint_cool_entity"),
                 config.get("water_tolerance", 0.3),
+                config.get("tamper_entity"),
+                config.get("command_climate"),
+                config.get("min_heat_temp"),
+                config.get("max_heat_temp"),
+                config.get("min_cool_temp"),
+                config.get("max_cool_temp"),
             )
         ]
     )
@@ -382,6 +412,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             water_setpoint_heat_entity_id=None,
             water_setpoint_cool_entity_id=None,
             water_tolerance=DEFAULT_TOLERANCE,
+            tamper_entity_id=None,
+            command_climate_entity_id=None,
+            min_heat_temp=None,
+            max_heat_temp=None,
+            min_cool_temp=None,
+            max_cool_temp=None,
     ):
         """Initialize the thermostat."""
         self._name = name
@@ -396,6 +432,27 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.consent_entity_id = consent_entity_id
         # When no consent entity is configured, consent is always granted
         self._consent_granted = consent_entity_id is None
+
+        # Tamper entity (inverse consent)
+        # When the tamper entity is ON, the thermostat is forced inactive (all devices off),
+        # while retaining the previously selected HVAC mode. Mirrors consent_entity but inverted.
+        # When no tamper entity is configured, tamper is never active.
+        self.tamper_entity_id = tamper_entity_id
+        self._tamper_active = False
+
+        # Physical command-panel climate device (e.g. Sonoff TP-WGZBA)
+        # The device's relay is not wired to anything; it is used purely as an input:
+        #   - its system_mode (off / non-off) drives the dual_mode on/off
+        #   - its setpoint is clamped into the heat/cool limits and applied as the target temp
+        # Actuation stays with heater/cooler switches. running_state is ignored.
+        self.command_climate_entity_id = command_climate_entity_id
+        # On/off of the command panel acts as an additional consent (does not change mode).
+        # Granted by default (and when no command device is configured).
+        self._command_climate_granted = True
+        self._min_heat_temp = min_heat_temp
+        self._max_heat_temp = max_heat_temp
+        self._min_cool_temp = min_cool_temp
+        self._max_cool_temp = max_cool_temp
 
         # Water temperature guard
         # water_sensor: optional sensor that reads the water supply temperature
@@ -518,10 +575,28 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.register_event_listener(self.water_setpoint_heat_entity_id, self._async_water_setpoint_entity_changed)
         self.register_event_listener(self.water_setpoint_cool_entity_id, self._async_water_setpoint_entity_changed)
 
+        # Tamper entity listener (inverse consent)
+        self.register_event_listener(self.tamper_entity_id, self._async_tamper_entity_changed)
+
+        # Command-panel climate device listener
+        self.register_event_listener(self.command_climate_entity_id, self._async_command_climate_changed)
+
         if self.consent_entity_id:
             consent_state = self.hass.states.get(self.consent_entity_id)
             self._consent_granted = self._extract_consent_from_state(consent_state)
             if not self._consent_granted:
+                await self._async_turn_off_all_devices()
+
+        if self.tamper_entity_id:
+            tamper_state = self.hass.states.get(self.tamper_entity_id)
+            self._tamper_active = self._extract_tamper_from_state(tamper_state)
+            if self._tamper_active:
+                await self._async_turn_off_all_devices()
+
+        if self.command_climate_entity_id:
+            command_state = self.hass.states.get(self.command_climate_entity_id)
+            self._command_climate_granted = self._extract_command_grant_from_state(command_state)
+            if not self._command_climate_granted:
                 await self._async_turn_off_all_devices()
 
         if self._keep_alive:
@@ -703,6 +778,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         if self._hvac_mode == HVAC_MODE_OFF:
             return CURRENT_HVAC_OFF
         if not self._consent_granted:
+            return CURRENT_HVAC_IDLE
+        if self._tamper_active:
+            return CURRENT_HVAC_IDLE
+        if not self._command_climate_granted:
             return CURRENT_HVAC_IDLE
         if self._is_water_guard_blocked:
             return CURRENT_HVAC_IDLE
@@ -999,6 +1078,110 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.async_write_ha_state()
 
     # ---------------------------------------------------------------------------
+    # Tamper entity — inverse consent (ON => thermostat inactive)
+    # ---------------------------------------------------------------------------
+
+    def _extract_tamper_from_state(self, state):
+        """Return True if the tamper entity is active (ON)."""
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            # Unavailable/unknown tamper is treated as inactive (don't block operation)
+            return False
+        return state.state == STATE_ON
+
+    @callback
+    async def _async_tamper_entity_changed(self, event: Event[EventStateChangedData]):
+        """Handle tamper entity state changes.
+
+        When the tamper becomes active, turn off all devices (keeping the HVAC mode).
+        When it clears, resume normal control. Mirrors consent handling but inverted.
+        """
+        new_state = event.data.get("new_state")
+        previous = self._tamper_active
+        self._tamper_active = self._extract_tamper_from_state(new_state)
+        if previous != self._tamper_active:
+            if self._tamper_active:
+                await self._async_turn_off_all_devices()
+            else:
+                await self._async_control_heating(force=True)
+        self.async_write_ha_state()
+
+    # ---------------------------------------------------------------------------
+    # Command-panel climate device — read-only input (system_mode + setpoint)
+    # ---------------------------------------------------------------------------
+
+    def _clamp_command_setpoint(self, value):
+        """Clamp a setpoint read from the command climate into the configured limits.
+
+        Uses heat limits when the dual_mode is in HEAT, cool limits when in COOL.
+        Falls back to the global min/max_temp when the mode-specific limits are unset.
+        """
+        if value is None:
+            return None
+        if self._hvac_mode == HVAC_MODE_HEAT:
+            low = self._min_heat_temp if self._min_heat_temp is not None else self._min_temp
+            high = self._max_heat_temp if self._max_heat_temp is not None else self._max_temp
+        elif self._hvac_mode == HVAC_MODE_COOL:
+            low = self._min_cool_temp if self._min_cool_temp is not None else self._min_temp
+            high = self._max_cool_temp if self._max_cool_temp is not None else self._max_temp
+        else:
+            low = self._min_temp
+            high = self._max_temp
+        if low is not None and value < low:
+            return low
+        if high is not None and value > high:
+            return high
+        return value
+
+    def _extract_command_grant_from_state(self, state):
+        """Return True if the command climate grants operation (system_mode != off).
+
+        Unavailable/unknown is treated as "granted" so the thermostat keeps working
+        from the UI when the physical panel is offline.
+        """
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return True
+        return state.state != HVAC_MODE_OFF
+
+    @callback
+    async def _async_command_climate_changed(self, event: Event[EventStateChangedData]):
+        """Handle changes on the physical command-panel climate device.
+
+        The device acts as a pure input, treated as an additional consent (like
+        consent_entity) rather than a mode controller:
+          - system_mode off      -> command grant OFF -> thermostat goes inactive
+                                     (devices off), WITHOUT changing the dual_mode HVAC mode
+          - system_mode non-off  -> command grant ON  -> normal control resumes
+          - setpoint             -> clamped into heat/cool limits and applied as target
+        The device is ignored when unavailable/unknown (thermostat keeps working via UI).
+        running_state is ignored (the device relay is not wired to anything).
+        """
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            # Ignore unavailable device — keep last known state and keep working via UI
+            return
+
+        # 1) On/off acts as consent — never touches the dual_mode HVAC mode
+        previous = self._command_climate_granted
+        self._command_climate_granted = self._extract_command_grant_from_state(new_state)
+        if previous != self._command_climate_granted and not self._command_climate_granted:
+            if self._is_device_active:
+                await self._async_turn_off_all_devices()
+
+        # 2) Sync the setpoint from the device, clamped into the configured limits
+        device_setpoint = new_state.attributes.get(ATTR_TEMPERATURE)
+        if device_setpoint is not None and self._hvac_mode in (HVAC_MODE_HEAT, HVAC_MODE_COOL):
+            try:
+                clamped = self._clamp_command_setpoint(float(device_setpoint))
+            except (ValueError, TypeError):
+                clamped = None
+            if clamped is not None and clamped != self._target_temp:
+                self._target_temp = clamped
+
+        # Re-run control (handles both resume-on-grant and setpoint change)
+        await self._async_control_heating(force=True)
+        self.async_write_ha_state()
+
+    # ---------------------------------------------------------------------------
     # Water temperature guard — callbacks, helpers and property
     # ---------------------------------------------------------------------------
 
@@ -1122,6 +1305,18 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 return
 
             if not self._consent_granted:
+                if self._is_device_active:
+                    await self._async_turn_off_all_devices()
+                return
+
+            # Tamper guard — when active, force inactive (mirror of consent but inverted)
+            if self._tamper_active:
+                if self._is_device_active:
+                    await self._async_turn_off_all_devices()
+                return
+
+            # Command panel consent — device system_mode off forces inactive (mode unchanged)
+            if not self._command_climate_granted:
                 if self._is_device_active:
                     await self._async_turn_off_all_devices()
                 return

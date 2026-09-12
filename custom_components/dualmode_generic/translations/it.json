@@ -33,6 +33,10 @@
                     "target_temp_low": "Target inferiore (modalità Caldo/Freddo)",
                     "min_temp": "Temperatura minima",
                     "max_temp": "Temperatura massima",
+                    "min_heat_temp": "Temperatura minima riscaldamento (limite pannello comando)",
+                    "max_heat_temp": "Temperatura massima riscaldamento (limite pannello comando)",
+                    "min_cool_temp": "Temperatura minima raffrescamento (limite pannello comando)",
+                    "max_cool_temp": "Temperatura massima raffrescamento (limite pannello comando)",
                     "cold_tolerance": "Tolleranza freddo",
                     "hot_tolerance": "Tolleranza caldo",
                     "precision": "Precisione",
@@ -41,7 +45,7 @@
             },
             "timing": {
                 "title": "Temporizzazione e Modalità",
-                "description": "Configura la durata dei cicli, il keep-alive, la modalità iniziale e le temperature away.",
+                "description": "Configura la durata dei cicli, il keep-alive, la modalità iniziale, le temperature away, il consenso, il tamper e il pannello di comando.",
                 "data": {
                     "min_cycle_duration": "Durata minima del ciclo",
                     "keep_alive": "Intervallo keep-alive",
@@ -49,7 +53,9 @@
                     "away_temp": "Temperatura assenza",
                     "away_temp_heater": "Temperatura assenza (riscaldamento)",
                     "away_temp_cooler": "Temperatura assenza (raffrescamento)",
-                    "consent_entity": "Entità di consenso"
+                    "consent_entity": "Entità di consenso",
+                    "tamper_entity": "Entità tamper (ON = termostato inattivo)",
+                    "command_climate": "Dispositivo climate pannello di comando"
                 }
             },
             "water_guard": {
@@ -101,6 +107,10 @@
                     "target_temp_low": "Target inferiore (modalità Caldo/Freddo)",
                     "min_temp": "Temperatura minima",
                     "max_temp": "Temperatura massima",
+                    "min_heat_temp": "Temperatura minima riscaldamento (limite pannello comando)",
+                    "max_heat_temp": "Temperatura massima riscaldamento (limite pannello comando)",
+                    "min_cool_temp": "Temperatura minima raffrescamento (limite pannello comando)",
+                    "max_cool_temp": "Temperatura massima raffrescamento (limite pannello comando)",
                     "cold_tolerance": "Tolleranza freddo",
                     "hot_tolerance": "Tolleranza caldo",
                     "precision": "Precisione",
@@ -109,7 +119,7 @@
             },
             "timing": {
                 "title": "Temporizzazione e Modalità",
-                "description": "Modifica la durata dei cicli, il keep-alive, la modalità iniziale e le temperature away.",
+                "description": "Modifica la durata dei cicli, il keep-alive, la modalità iniziale, le temperature away, il consenso, il tamper e il pannello di comando.",
                 "data": {
                     "min_cycle_duration": "Durata minima del ciclo",
                     "keep_alive": "Intervallo keep-alive",
@@ -117,7 +127,9 @@
                     "away_temp": "Temperatura assenza",
                     "away_temp_heater": "Temperatura assenza (riscaldamento)",
                     "away_temp_cooler": "Temperatura assenza (raffrescamento)",
-                    "consent_entity": "Entità di consenso"
+                    "consent_entity": "Entità di consenso",
+                    "tamper_entity": "Entità tamper (ON = termostato inattivo)",
+                    "command_climate": "Dispositivo climate pannello di comando"
                 }
             },
             "water_guard": {

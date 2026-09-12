@@ -25,6 +25,12 @@ SENSOR_SELECTOR = selector.EntitySelector(
 CONSENT_ENTITY_SELECTOR = selector.EntitySelector(
     selector.EntitySelectorConfig(domain=["binary_sensor", "input_boolean", "calendar", "switch"])
 )
+TAMPER_ENTITY_SELECTOR = selector.EntitySelector(
+    selector.EntitySelectorConfig(domain=["binary_sensor", "input_boolean"])
+)
+CLIMATE_SELECTOR = selector.EntitySelector(
+    selector.EntitySelectorConfig(domain=["climate"])
+)
 NUMBER_ENTITY_SELECTOR = selector.EntitySelector(
     selector.EntitySelectorConfig(domain=["input_number", "number", "sensor"])
 )
@@ -168,6 +174,10 @@ class DualModeGenericConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional("target_temp_low"): TEMPERATURE_SELECTOR,
                 vol.Optional("min_temp"): TEMPERATURE_SELECTOR,
                 vol.Optional("max_temp"): TEMPERATURE_SELECTOR,
+                vol.Optional("min_heat_temp"): TEMPERATURE_SELECTOR,
+                vol.Optional("max_heat_temp"): TEMPERATURE_SELECTOR,
+                vol.Optional("min_cool_temp"): TEMPERATURE_SELECTOR,
+                vol.Optional("max_cool_temp"): TEMPERATURE_SELECTOR,
                 vol.Optional("cold_tolerance", default=0.3): TOLERANCE_SELECTOR,
                 vol.Optional("hot_tolerance", default=0.3): TOLERANCE_SELECTOR,
                 vol.Optional("precision"): PRECISION_SELECTOR,
@@ -193,6 +203,8 @@ class DualModeGenericConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional("away_temp_heater"): TEMPERATURE_SELECTOR,
                 vol.Optional("away_temp_cooler"): TEMPERATURE_SELECTOR,
                 vol.Optional("consent_entity"): CONSENT_ENTITY_SELECTOR,
+                vol.Optional("tamper_entity"): TAMPER_ENTITY_SELECTOR,
+                vol.Optional("command_climate"): CLIMATE_SELECTOR,
             }
         )
         return self.async_show_form(step_id="timing", data_schema=schema, errors=errors)
@@ -289,6 +301,10 @@ class DualModeGenericOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional("target_temp_low", description={"suggested_value": self._get("target_temp_low")}): TEMPERATURE_SELECTOR,
                 vol.Optional("min_temp", description={"suggested_value": self._get("min_temp")}): TEMPERATURE_SELECTOR,
                 vol.Optional("max_temp", description={"suggested_value": self._get("max_temp")}): TEMPERATURE_SELECTOR,
+                vol.Optional("min_heat_temp", description={"suggested_value": self._get("min_heat_temp")}): TEMPERATURE_SELECTOR,
+                vol.Optional("max_heat_temp", description={"suggested_value": self._get("max_heat_temp")}): TEMPERATURE_SELECTOR,
+                vol.Optional("min_cool_temp", description={"suggested_value": self._get("min_cool_temp")}): TEMPERATURE_SELECTOR,
+                vol.Optional("max_cool_temp", description={"suggested_value": self._get("max_cool_temp")}): TEMPERATURE_SELECTOR,
                 vol.Optional("cold_tolerance", default=self._get("cold_tolerance", 0.3)): TOLERANCE_SELECTOR,
                 vol.Optional("hot_tolerance", default=self._get("hot_tolerance", 0.3)): TOLERANCE_SELECTOR,
                 vol.Optional("precision", description={"suggested_value": self._get("precision")}): PRECISION_SELECTOR,
@@ -314,6 +330,8 @@ class DualModeGenericOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional("away_temp_heater", description={"suggested_value": self._get("away_temp_heater")}): TEMPERATURE_SELECTOR,
                 vol.Optional("away_temp_cooler", description={"suggested_value": self._get("away_temp_cooler")}): TEMPERATURE_SELECTOR,
                 vol.Optional("consent_entity", description={"suggested_value": self._get("consent_entity", "")}): CONSENT_ENTITY_SELECTOR,
+                vol.Optional("tamper_entity", description={"suggested_value": self._get("tamper_entity", "")}): TAMPER_ENTITY_SELECTOR,
+                vol.Optional("command_climate", description={"suggested_value": self._get("command_climate", "")}): CLIMATE_SELECTOR,
             }
         )
         return self.async_show_form(step_id="timing", data_schema=schema)

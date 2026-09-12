@@ -33,6 +33,10 @@
                     "target_temp_low": "Default lower target (Heat/Cool mode)",
                     "min_temp": "Minimum temperature",
                     "max_temp": "Maximum temperature",
+                    "min_heat_temp": "Minimum heating temperature (command panel clamp)",
+                    "max_heat_temp": "Maximum heating temperature (command panel clamp)",
+                    "min_cool_temp": "Minimum cooling temperature (command panel clamp)",
+                    "max_cool_temp": "Maximum cooling temperature (command panel clamp)",
                     "cold_tolerance": "Cold tolerance",
                     "hot_tolerance": "Hot tolerance",
                     "precision": "Precision",
@@ -41,7 +45,7 @@
             },
             "timing": {
                 "title": "Timing & Modes",
-                "description": "Configure cycle timing, keep-alive, initial mode, and away temperatures.",
+                "description": "Configure cycle timing, keep-alive, initial mode, away temperatures, consent, tamper and command panel.",
                 "data": {
                     "min_cycle_duration": "Minimum cycle duration",
                     "keep_alive": "Keep-alive interval",
@@ -49,7 +53,9 @@
                     "away_temp": "Away temperature",
                     "away_temp_heater": "Away temperature (heater)",
                     "away_temp_cooler": "Away temperature (cooler)",
-                    "consent_entity": "Consent entity"
+                    "consent_entity": "Consent entity",
+                    "tamper_entity": "Tamper entity (ON = thermostat inactive)",
+                    "command_climate": "Command panel climate device"
                 }
             },
             "water_guard": {
@@ -101,6 +107,10 @@
                     "target_temp_low": "Default lower target (Heat/Cool mode)",
                     "min_temp": "Minimum temperature",
                     "max_temp": "Maximum temperature",
+                    "min_heat_temp": "Minimum heating temperature (command panel clamp)",
+                    "max_heat_temp": "Maximum heating temperature (command panel clamp)",
+                    "min_cool_temp": "Minimum cooling temperature (command panel clamp)",
+                    "max_cool_temp": "Maximum cooling temperature (command panel clamp)",
                     "cold_tolerance": "Cold tolerance",
                     "hot_tolerance": "Hot tolerance",
                     "precision": "Precision",
@@ -109,7 +119,7 @@
             },
             "timing": {
                 "title": "Timing & Modes",
-                "description": "Edit cycle timing, keep-alive, initial mode, and away temperatures.",
+                "description": "Edit cycle timing, keep-alive, initial mode, away temperatures, consent, tamper and command panel.",
                 "data": {
                     "min_cycle_duration": "Minimum cycle duration",
                     "keep_alive": "Keep-alive interval",
@@ -117,7 +127,9 @@
                     "away_temp": "Away temperature",
                     "away_temp_heater": "Away temperature (heater)",
                     "away_temp_cooler": "Away temperature (cooler)",
-                    "consent_entity": "Consent entity"
+                    "consent_entity": "Consent entity",
+                    "tamper_entity": "Tamper entity (ON = thermostat inactive)",
+                    "command_climate": "Command panel climate device"
                 }
             },
             "water_guard": {

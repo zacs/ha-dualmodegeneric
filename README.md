@@ -97,6 +97,56 @@ Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/co
 
 * `consent_entity`is an optional entity (e.g., `binary_sensor`, `input_boolean`, or `calendar`) that acts as an additional control for the thermostat. When the entity is in the "on" state (or equivalent, such as `true` for calendars), the thermostat operates normally. When the entity is "off" or unavailable, all devices controlled by the thermostat (heater, cooler, dryer, fan) are turned off, but the thermostat retains its previous HVAC mode setting ("keep previous mode"). This allows you to schedule thermostat operation using calendar entities or other logic, without needing separate automations.
 
+## Tamper Entity
+
+`tamper_entity` is an optional entity (e.g. `binary_sensor`, `input_boolean`) that acts as an **inverse consent** control. When the tamper entity is **ON**, the thermostat is forced inactive: all controlled devices (heater, cooler, fan, dryer) are turned off while the previously selected HVAC mode is retained. When the tamper clears (**OFF** or unavailable), normal control resumes.
+
+This is a layer that adds to `consent_entity`, the water guard and `min_cycle_duration` — it does not replace any of them. Use it as a safety interlock (e.g. an open-window or tamper sensor that must stop the thermostat).
+
+## Command Panel (Physical Climate Device)
+
+`command_climate` lets you drive the thermostat from a **physical climate device used purely as a command panel** — for example a Sonoff TP-WGZBA or a boiler thermostat with a dry contact. The device's own relay does not need to be wired to anything; the actuation stays with the `heater`/`cooler` switches. The physical device is used only as an **input**:
+
+* Its `system_mode` acts as an additional consent (it does **not** change the thermostat's HVAC mode):
+    * `off` → the thermostat goes **inactive** (all devices off), but keeps the HVAC mode you selected on the dual mode thermostat
+    * non-off (`heat` / `auto`) → normal control resumes
+* Its setpoint is read and applied as the target temperature, **clamped** into the configured limits:
+    * in `HEAT` mode → clamped between `min_heat_temp` and `max_heat_temp`
+    * in `COOL` mode → clamped between `min_cool_temp` and `max_cool_temp`
+    * if a mode-specific limit is unset, it falls back to the global `min_temp` / `max_temp`
+    * a value outside the range is forced to the nearest limit
+* `running_state` is **ignored** (the relay is not used)
+* If the physical device becomes unavailable, it is **ignored** — the thermostat keeps its last state and continues to work from the Home Assistant UI
+
+The heat/cool clamp limits are optional and additive (fully backward compatible):
+
+| Key | Description |
+|---|---|
+| `min_heat_temp` | Lower clamp for the setpoint synced from the command panel in HEAT mode |
+| `max_heat_temp` | Upper clamp for the setpoint synced from the command panel in HEAT mode |
+| `min_cool_temp` | Lower clamp for the setpoint synced from the command panel in COOL mode |
+| `max_cool_temp` | Upper clamp for the setpoint synced from the command panel in COOL mode |
+
+The mode choice (heat vs cool) always stays on the dual mode thermostat — the physical panel only provides on/off and a setpoint.
+
+### Example Config
+
+```yaml
+climate:
+  - platform: dualmode_generic
+    name: Living Room
+    heater: switch.heating_valve
+    cooler: switch.cooling_valve
+    target_sensor: sensor.room_temperature
+    enable_heat_cool: True
+    tamper_entity: binary_sensor.window_open
+    command_climate: climate.wall_panel
+    min_heat_temp: 16
+    max_heat_temp: 24
+    min_cool_temp: 20
+    max_cool_temp: 28
+```
+
 ## Water Temperature Guard
 
 The thermostat supports an optional **water supply temperature guard** that prevents the heater or cooler from activating unless the water circuit has reached the required temperature. This is useful for hydronic systems (e.g., radiant floor heating, fan coils) where the equipment should only run when the boiler or chiller has prepared the water.
