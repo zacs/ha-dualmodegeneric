@@ -745,6 +745,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 ):
                     self._async_update_water_setpoint_cool(water_sp_cool_state)
 
+            # Run an initial control pass once the sensors have been read.
+            # Without this, on a config reload (hass already running) the thermostat
+            # stays with _active = False and reports "idle" until the next sensor
+            # event arrives, even though it should be actively controlling.
+            self.hass.async_create_task(self._async_control_heating())
+
         if self.hass.state == CoreState.running:
             _async_startup()
         else:
