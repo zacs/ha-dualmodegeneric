@@ -564,6 +564,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     async def async_added_to_hass(self):
         """Run when entity about to be added."""
+        _LOGGER.warning("DMGT-DIAG [%s] async_added_to_hass START", self._name)
         await super().async_added_to_hass()
 
         # Sensors
@@ -705,6 +706,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         @callback
         def _async_startup(event=None):
             """Init on startup."""
+            _LOGGER.warning(
+                "DMGT-DIAG [%s] _async_startup running (event=%s, hvac_mode=%s)",
+                self._name, event, self._hvac_mode,
+            )
             if self.sensor_entity_id:
                 temp_sensor_state = self.hass.states.get(self.sensor_entity_id)
                 if temp_sensor_state and temp_sensor_state.state not in (
@@ -753,6 +758,11 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             # until the next sensor event (or forever if none arrives).
             self.hass.async_create_task(self._async_control_heating(force=True))
 
+        _LOGGER.warning(
+            "DMGT-DIAG [%s] async_added_to_hass END, hass.state=%s -> %s",
+            self._name, self.hass.state,
+            "startup now" if self.hass.state == CoreState.running else "wait for START event",
+        )
         if self.hass.state == CoreState.running:
             _async_startup()
         else:
@@ -767,6 +777,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         heater/cooler/fan/dryer entity IDs, so a still-ON actuator could be left
         stranded. Shutting them down here prevents that.
         """
+        _LOGGER.warning("DMGT-DIAG [%s] async_will_remove_from_hass (turning off devices)", self._name)
         await self._async_turn_off_all_devices()
         await super().async_will_remove_from_hass()
 
