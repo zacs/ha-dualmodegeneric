@@ -750,23 +750,26 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 ):
                     self._async_update_water_setpoint_cool(water_sp_cool_state)
 
-            # Run an initial control pass once the sensors have been read.
-            # Use force=True to bypass min_cycle_duration: on a config reload
-            # (hass already running) the actuators were just turned off during
-            # unload, so a non-forced pass would see the device as "not on long
-            # enough" and skip re-activation, leaving the thermostat stuck idle
-            # until the next sensor event (or forever if none arrives).
-            self.hass.async_create_task(self._async_control_heating(force=True))
-
         _LOGGER.warning(
             "DMGT-DIAG [%s] async_added_to_hass END, hass.state=%s -> %s",
             self._name, self.hass.state,
             "startup now" if self.hass.state == CoreState.running else "wait for START event",
         )
         if self.hass.state == CoreState.running:
+            # HA already running (e.g. config reload): read sensors synchronously,
+            # then run the initial control pass with an AWAITED call. Awaiting here
+            # (instead of a fire-and-forget create_task) guarantees the pass runs —
+            # a detached task can be garbage-collected before executing, which left
+            # some thermostats stuck idle after a reload.
             _async_startup()
+            await self._async_control_heating(force=True)
         else:
-            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, _async_startup)
+            # First boot: run sensor read + initial control once HA has started.
+            async def _startup_then_control(event=None):
+                _async_startup(event)
+                await self._async_control_heating(force=True)
+
+            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, _startup_then_control)
 
     async def async_will_remove_from_hass(self):
         """Run when the entity is about to be removed.
