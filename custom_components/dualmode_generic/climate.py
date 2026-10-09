@@ -1377,6 +1377,16 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
     async def _async_control_heating(self, time=None, force=False, previous_mode: HVACMode=None):
         """Check if we need to turn heating on or off."""
         async with self._temp_lock:
+            _LOGGER.warning(
+                "DMGT-DIAG [%s] enter control: force=%s time=%s active=%s cur_temp=%s "
+                "target=%s low=%s high=%s mode=%s consent=%s tamper=%s cmd_grant=%s "
+                "water_blocked=%s device_active=%s heater=%s cooler=%s",
+                self._name, force, time, self._active, self._cur_temp,
+                self._target_temp, self._target_temp_low, self._target_temp_high,
+                self._hvac_mode, self._consent_granted, self._tamper_active,
+                self._command_climate_granted, self._is_water_guard_blocked,
+                self._is_device_active, self.heater_entity_id, self.cooler_entity_id,
+            )
             if not self._active and self._cur_temp is not None:
                 if self._target_temp is not None or None not in (self._target_temp_high, self._target_temp_low):
                     self._active = True
@@ -1390,6 +1400,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                     )
 
             if not self._active or self._hvac_mode == HVAC_MODE_OFF:
+                _LOGGER.warning(
+                    "DMGT-DIAG [%s] early return: active=%s mode=%s",
+                    self._name, self._active, self._hvac_mode,
+                )
                 return
 
             if not self._consent_granted:
@@ -1476,6 +1490,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                         self.min_cycle_duration,
                     )
                     if not long_enough:
+                        _LOGGER.warning(
+                            "DMGT-DIAG [%s] min_cycle_duration blocked: active_entity=%s current_state=%s",
+                            self._name, active_entity, current_state,
+                        )
                         return
 
             # Check new mode against previous HVAC mode and
@@ -1577,6 +1595,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if not self._is_device_active:
                 too_cold = self._is_too_cold_activate()
                 too_hot = self._is_too_hot_activate()
+                _LOGGER.warning(
+                    "DMGT-DIAG [%s] inactive branch: too_cold=%s too_hot=%s mode=%s "
+                    "cur_temp=%s target=%s cold_tol=%s hot_tol=%s",
+                    self._name, too_cold, too_hot, self._hvac_mode,
+                    self._cur_temp, self._target_temp, self._cold_tolerance, self._hot_tolerance,
+                )
                 if too_hot and self._hvac_mode in [HVAC_MODE_COOL, HVAC_MODE_HEAT_COOL]:
                     if self._is_water_guard_satisfied(for_heat=False):
                         _LOGGER.info("Turning on cooler %s", self.cooler_entity_id)
