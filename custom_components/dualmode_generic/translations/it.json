@@ -1,0 +1,149 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Configurazione base",
+                "description": "Configura le impostazioni di base del termostato.",
+                "data": {
+                    "name": "Nome",
+                    "target_sensor": "Sensore di temperatura (opzionale se è impostato un pannello di comando)",
+                    "target_humidity_sensor": "Sensore di umidità (opzionale)"
+                }
+            },
+            "devices": {
+                "title": "Dispositivi",
+                "description": "Configura i dispositivi di riscaldamento, raffrescamento, ventilazione e deumidificazione.",
+                "data": {
+                    "heater": "Switch riscaldamento",
+                    "cooler": "Switch raffrescamento",
+                    "fan": "Switch ventilatore",
+                    "fan_behavior": "Comportamento ventilatore",
+                    "dryer": "Switch deumidificatore",
+                    "dryer_behavior": "Comportamento deumidificatore",
+                    "reverse_cycle": "Dispositivi a ciclo inverso",
+                    "enable_heat_cool": "Abilita modalità Caldo/Freddo"
+                }
+            },
+            "temperature": {
+                "title": "Temperature e Controllo",
+                "description": "Configura le temperature target, i limiti e le tolleranze.",
+                "data": {
+                    "target_temp": "Temperatura target predefinita",
+                    "target_temp_high": "Target superiore (modalità Caldo/Freddo)",
+                    "target_temp_low": "Target inferiore (modalità Caldo/Freddo)",
+                    "min_temp": "Temperatura minima",
+                    "max_temp": "Temperatura massima",
+                    "min_heat_temp": "Temperatura minima riscaldamento (limite pannello comando)",
+                    "max_heat_temp": "Temperatura massima riscaldamento (limite pannello comando)",
+                    "min_cool_temp": "Temperatura minima raffrescamento (limite pannello comando)",
+                    "max_cool_temp": "Temperatura massima raffrescamento (limite pannello comando)",
+                    "cold_tolerance": "Tolleranza freddo",
+                    "hot_tolerance": "Tolleranza caldo",
+                    "precision": "Precisione",
+                    "target_temp_step": "Step temperatura"
+                }
+            },
+            "timing": {
+                "title": "Temporizzazione e Modalità",
+                "description": "Configura la durata dei cicli, il keep-alive, la modalità iniziale, le temperature away, il consenso, il tamper e il pannello di comando.",
+                "data": {
+                    "min_cycle_duration": "Durata minima del ciclo",
+                    "keep_alive": "Intervallo keep-alive",
+                    "initial_hvac_mode": "Modalità HVAC iniziale",
+                    "away_temp": "Temperatura assenza",
+                    "away_temp_heater": "Temperatura assenza (riscaldamento)",
+                    "away_temp_cooler": "Temperatura assenza (raffrescamento)",
+                    "consent_entity": "Entità di consenso",
+                    "tamper_entity": "Entità tamper (ON = termostato inattivo)",
+                    "command_climate": "Dispositivo climate pannello di comando"
+                }
+            },
+            "water_guard": {
+                "title": "Guardia temperatura acqua",
+                "description": "Configura la guardia sulla temperatura di mandata dell'acqua per impedire il funzionamento quando l'acqua non è alla temperatura richiesta.",
+                "data": {
+                    "water_sensor": "Sensore temperatura acqua",
+                    "water_setpoint_heat": "Setpoint acqua riscaldamento (temp. minima acqua per scaldare)",
+                    "water_setpoint_cool": "Setpoint acqua raffrescamento (temp. massima acqua per raffreddare)",
+                    "water_setpoint_heat_entity": "Entità setpoint acqua riscaldamento (sovrascrive il valore fisso)",
+                    "water_setpoint_cool_entity": "Entità setpoint acqua raffrescamento (sovrascrive il valore fisso)",
+                    "water_tolerance": "Tolleranza temperatura acqua"
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Opzioni",
+                "description": "Seleziona una categoria da modificare.",
+                "menu_options": {
+                    "devices": "Dispositivi",
+                    "temperature": "Temperature e Controllo",
+                    "timing": "Temporizzazione e Modalità",
+                    "water_guard": "Guardia temperatura acqua"
+                }
+            },
+            "devices": {
+                "title": "Dispositivi",
+                "description": "Modifica i dispositivi di riscaldamento, raffrescamento, ventilazione e deumidificazione.",
+                "data": {
+                    "heater": "Switch riscaldamento",
+                    "cooler": "Switch raffrescamento",
+                    "fan": "Switch ventilatore",
+                    "fan_behavior": "Comportamento ventilatore",
+                    "dryer": "Switch deumidificatore",
+                    "dryer_behavior": "Comportamento deumidificatore",
+                    "reverse_cycle": "Dispositivi a ciclo inverso",
+                    "enable_heat_cool": "Abilita modalità Caldo/Freddo"
+                }
+            },
+            "temperature": {
+                "title": "Temperature e Controllo",
+                "description": "Modifica le temperature target, i limiti e le tolleranze.",
+                "data": {
+                    "target_temp": "Temperatura target predefinita",
+                    "target_temp_high": "Target superiore (modalità Caldo/Freddo)",
+                    "target_temp_low": "Target inferiore (modalità Caldo/Freddo)",
+                    "min_temp": "Temperatura minima",
+                    "max_temp": "Temperatura massima",
+                    "min_heat_temp": "Temperatura minima riscaldamento (limite pannello comando)",
+                    "max_heat_temp": "Temperatura massima riscaldamento (limite pannello comando)",
+                    "min_cool_temp": "Temperatura minima raffrescamento (limite pannello comando)",
+                    "max_cool_temp": "Temperatura massima raffrescamento (limite pannello comando)",
+                    "cold_tolerance": "Tolleranza freddo",
+                    "hot_tolerance": "Tolleranza caldo",
+                    "precision": "Precisione",
+                    "target_temp_step": "Step temperatura"
+                }
+            },
+            "timing": {
+                "title": "Temporizzazione e Modalità",
+                "description": "Modifica la durata dei cicli, il keep-alive, la modalità iniziale, le temperature away, il consenso, il tamper e il pannello di comando.",
+                "data": {
+                    "min_cycle_duration": "Durata minima del ciclo",
+                    "keep_alive": "Intervallo keep-alive",
+                    "initial_hvac_mode": "Modalità HVAC iniziale",
+                    "away_temp": "Temperatura assenza",
+                    "away_temp_heater": "Temperatura assenza (riscaldamento)",
+                    "away_temp_cooler": "Temperatura assenza (raffrescamento)",
+                    "consent_entity": "Entità di consenso",
+                    "tamper_entity": "Entità tamper (ON = termostato inattivo)",
+                    "command_climate": "Dispositivo climate pannello di comando"
+                }
+            },
+            "water_guard": {
+                "title": "Guardia temperatura acqua",
+                "description": "Modifica le impostazioni della guardia sulla temperatura di mandata dell'acqua.",
+                "data": {
+                    "water_sensor": "Sensore temperatura acqua",
+                    "water_setpoint_heat": "Setpoint acqua riscaldamento",
+                    "water_setpoint_cool": "Setpoint acqua raffrescamento",
+                    "water_setpoint_heat_entity": "Entità setpoint acqua riscaldamento",
+                    "water_setpoint_cool_entity": "Entità setpoint acqua raffrescamento",
+                    "water_tolerance": "Tolleranza temperatura acqua"
+                }
+            }
+        }
+    }
+}

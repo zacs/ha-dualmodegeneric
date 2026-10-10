@@ -1,0 +1,149 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Base Configuration",
+                "description": "Configure the basic settings for the thermostat.",
+                "data": {
+                    "name": "Name",
+                    "target_sensor": "Temperature sensor (optional if a command panel is set)",
+                    "target_humidity_sensor": "Humidity sensor (optional)"
+                }
+            },
+            "devices": {
+                "title": "Devices",
+                "description": "Configure the heating, cooling, fan, and dryer devices.",
+                "data": {
+                    "heater": "Heater switch",
+                    "cooler": "Cooler switch",
+                    "fan": "Fan switch",
+                    "fan_behavior": "Fan behavior",
+                    "dryer": "Dryer switch",
+                    "dryer_behavior": "Dryer behavior",
+                    "reverse_cycle": "Reverse cycle devices",
+                    "enable_heat_cool": "Enable Heat/Cool mode"
+                }
+            },
+            "temperature": {
+                "title": "Temperature & Control",
+                "description": "Configure temperature targets, limits, and tolerances.",
+                "data": {
+                    "target_temp": "Default target temperature",
+                    "target_temp_high": "Default upper target (Heat/Cool mode)",
+                    "target_temp_low": "Default lower target (Heat/Cool mode)",
+                    "min_temp": "Minimum temperature",
+                    "max_temp": "Maximum temperature",
+                    "min_heat_temp": "Minimum heating temperature (command panel clamp)",
+                    "max_heat_temp": "Maximum heating temperature (command panel clamp)",
+                    "min_cool_temp": "Minimum cooling temperature (command panel clamp)",
+                    "max_cool_temp": "Maximum cooling temperature (command panel clamp)",
+                    "cold_tolerance": "Cold tolerance",
+                    "hot_tolerance": "Hot tolerance",
+                    "precision": "Precision",
+                    "target_temp_step": "Temperature step"
+                }
+            },
+            "timing": {
+                "title": "Timing & Modes",
+                "description": "Configure cycle timing, keep-alive, initial mode, away temperatures, consent, tamper and command panel.",
+                "data": {
+                    "min_cycle_duration": "Minimum cycle duration",
+                    "keep_alive": "Keep-alive interval",
+                    "initial_hvac_mode": "Initial HVAC mode",
+                    "away_temp": "Away temperature",
+                    "away_temp_heater": "Away temperature (heater)",
+                    "away_temp_cooler": "Away temperature (cooler)",
+                    "consent_entity": "Consent entity",
+                    "tamper_entity": "Tamper entity (ON = thermostat inactive)",
+                    "command_climate": "Command panel climate device"
+                }
+            },
+            "water_guard": {
+                "title": "Water Temperature Guard",
+                "description": "Configure water supply temperature guard to prevent operation when water is not at the required temperature.",
+                "data": {
+                    "water_sensor": "Water temperature sensor",
+                    "water_setpoint_heat": "Water setpoint for heating (min water temp to allow heating)",
+                    "water_setpoint_cool": "Water setpoint for cooling (max water temp to allow cooling)",
+                    "water_setpoint_heat_entity": "Water setpoint heat entity (overrides fixed value)",
+                    "water_setpoint_cool_entity": "Water setpoint cool entity (overrides fixed value)",
+                    "water_tolerance": "Water temperature tolerance"
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Options",
+                "description": "Select a category to edit.",
+                "menu_options": {
+                    "devices": "Devices",
+                    "temperature": "Temperature & Control",
+                    "timing": "Timing & Modes",
+                    "water_guard": "Water Temperature Guard"
+                }
+            },
+            "devices": {
+                "title": "Devices",
+                "description": "Edit heating, cooling, fan, and dryer devices.",
+                "data": {
+                    "heater": "Heater switch",
+                    "cooler": "Cooler switch",
+                    "fan": "Fan switch",
+                    "fan_behavior": "Fan behavior",
+                    "dryer": "Dryer switch",
+                    "dryer_behavior": "Dryer behavior",
+                    "reverse_cycle": "Reverse cycle devices",
+                    "enable_heat_cool": "Enable Heat/Cool mode"
+                }
+            },
+            "temperature": {
+                "title": "Temperature & Control",
+                "description": "Edit temperature targets, limits, and tolerances.",
+                "data": {
+                    "target_temp": "Default target temperature",
+                    "target_temp_high": "Default upper target (Heat/Cool mode)",
+                    "target_temp_low": "Default lower target (Heat/Cool mode)",
+                    "min_temp": "Minimum temperature",
+                    "max_temp": "Maximum temperature",
+                    "min_heat_temp": "Minimum heating temperature (command panel clamp)",
+                    "max_heat_temp": "Maximum heating temperature (command panel clamp)",
+                    "min_cool_temp": "Minimum cooling temperature (command panel clamp)",
+                    "max_cool_temp": "Maximum cooling temperature (command panel clamp)",
+                    "cold_tolerance": "Cold tolerance",
+                    "hot_tolerance": "Hot tolerance",
+                    "precision": "Precision",
+                    "target_temp_step": "Temperature step"
+                }
+            },
+            "timing": {
+                "title": "Timing & Modes",
+                "description": "Edit cycle timing, keep-alive, initial mode, away temperatures, consent, tamper and command panel.",
+                "data": {
+                    "min_cycle_duration": "Minimum cycle duration",
+                    "keep_alive": "Keep-alive interval",
+                    "initial_hvac_mode": "Initial HVAC mode",
+                    "away_temp": "Away temperature",
+                    "away_temp_heater": "Away temperature (heater)",
+                    "away_temp_cooler": "Away temperature (cooler)",
+                    "consent_entity": "Consent entity",
+                    "tamper_entity": "Tamper entity (ON = thermostat inactive)",
+                    "command_climate": "Command panel climate device"
+                }
+            },
+            "water_guard": {
+                "title": "Water Temperature Guard",
+                "description": "Edit water supply temperature guard settings.",
+                "data": {
+                    "water_sensor": "Water temperature sensor",
+                    "water_setpoint_heat": "Water setpoint for heating",
+                    "water_setpoint_cool": "Water setpoint for cooling",
+                    "water_setpoint_heat_entity": "Water setpoint heat entity",
+                    "water_setpoint_cool_entity": "Water setpoint cool entity",
+                    "water_tolerance": "Water temperature tolerance"
+                }
+            }
+        }
+    }
+}

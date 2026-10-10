@@ -3,7 +3,8 @@
     "name": "Multi-Mode Generic Thermostat",
     "documentation": "https://github.com/zacs/ha-dualmodegeneric",
     "issue_tracker": "https://github.com/zacs/ha-dualmodegeneric/issues",
-    "version": "0.2.1",
+    "version": "0.3.0",
+    "config_flow": true,
     "dependencies": [],
     "codeowners": ["@zacs"],
     "requirements": []

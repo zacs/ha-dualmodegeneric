@@ -97,6 +97,18 @@ CONF_REVERSE_CYCLE = "reverse_cycle"
 CONF_SENSOR = "target_sensor"
 CONF_HUMIDITY_SENSOR = "target_humidity_sensor"
 CONF_CONSENT_ENTITY = "consent_entity"  # Optional entity to control thermostat enable/disable
+CONF_TAMPER_ENTITY = "tamper_entity"  # Optional entity that, when ON, forces the thermostat inactive (inverse consent)
+CONF_COMMAND_CLIMATE = "command_climate"  # Optional physical climate device used as a command panel (on/off + setpoint)
+CONF_MIN_HEAT_TEMP = "min_heat_temp"  # Optional lower clamp for heating setpoint synced from command_climate
+CONF_MAX_HEAT_TEMP = "max_heat_temp"  # Optional upper clamp for heating setpoint synced from command_climate
+CONF_MIN_COOL_TEMP = "min_cool_temp"  # Optional lower clamp for cooling setpoint synced from command_climate
+CONF_MAX_COOL_TEMP = "max_cool_temp"  # Optional upper clamp for cooling setpoint synced from command_climate
+CONF_WATER_SENSOR = "water_sensor"  # Optional water supply temperature sensor
+CONF_WATER_SETPOINT_HEAT = "water_setpoint_heat"  # Fixed water temp setpoint for heating (water must be >= this)
+CONF_WATER_SETPOINT_COOL = "water_setpoint_cool"  # Fixed water temp setpoint for cooling (water must be <= this)
+CONF_WATER_SETPOINT_HEAT_ENTITY = "water_setpoint_heat_entity"  # Dynamic water setpoint entity for heating
+CONF_WATER_SETPOINT_COOL_ENTITY = "water_setpoint_cool_entity"  # Dynamic water setpoint entity for cooling
+CONF_WATER_TOLERANCE = "water_tolerance"  # Optional tolerance for water temperature guard
 CONF_MIN_TEMP = "min_temp"
 CONF_MAX_TEMP = "max_temp"
 CONF_TARGET_TEMP_HIGH = "target_temp_high"
@@ -132,9 +144,15 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_HEATER): cv.entity_id,
         vol.Optional(CONF_COOLER): cv.entity_id,
-        vol.Required(CONF_SENSOR): cv.entity_id,
+        vol.Optional(CONF_SENSOR): cv.entity_id,
         vol.Optional(CONF_HUMIDITY_SENSOR): cv.entity_id,
         vol.Optional(CONF_CONSENT_ENTITY): cv.entity_id,
+        vol.Optional(CONF_TAMPER_ENTITY): cv.entity_id,
+        vol.Optional(CONF_COMMAND_CLIMATE): cv.entity_id,
+        vol.Optional(CONF_MIN_HEAT_TEMP): vol.Coerce(float),
+        vol.Optional(CONF_MAX_HEAT_TEMP): vol.Coerce(float),
+        vol.Optional(CONF_MIN_COOL_TEMP): vol.Coerce(float),
+        vol.Optional(CONF_MAX_COOL_TEMP): vol.Coerce(float),
         vol.Optional(CONF_FAN): cv.entity_id,
         vol.Optional(CONF_FAN_BEHAVIOR, default=FAN_MODE_NEUTRAL): vol.In(
             [FAN_MODE_COOL, FAN_MODE_HEAT, FAN_MODE_NEUTRAL]),
@@ -166,6 +184,12 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
             [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
         ),
         vol.Optional(CONF_UNIQUE_ID): cv.string,
+        vol.Optional(CONF_WATER_SENSOR): cv.entity_id,
+        vol.Optional(CONF_WATER_SETPOINT_HEAT): vol.Coerce(float),
+        vol.Optional(CONF_WATER_SETPOINT_COOL): vol.Coerce(float),
+        vol.Optional(CONF_WATER_SETPOINT_HEAT_ENTITY): cv.entity_id,
+        vol.Optional(CONF_WATER_SETPOINT_COOL_ENTITY): cv.entity_id,
+        vol.Optional(CONF_WATER_TOLERANCE, default=DEFAULT_TOLERANCE): vol.Coerce(float),
     }
 )
 
@@ -204,6 +228,18 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     unique_id = config.get(CONF_UNIQUE_ID)
     humidity_sensor_entity_id = config.get(CONF_HUMIDITY_SENSOR)
     consent_entity_id = config.get(CONF_CONSENT_ENTITY)
+    tamper_entity_id = config.get(CONF_TAMPER_ENTITY)
+    command_climate_entity_id = config.get(CONF_COMMAND_CLIMATE)
+    min_heat_temp = config.get(CONF_MIN_HEAT_TEMP)
+    max_heat_temp = config.get(CONF_MAX_HEAT_TEMP)
+    min_cool_temp = config.get(CONF_MIN_COOL_TEMP)
+    max_cool_temp = config.get(CONF_MAX_COOL_TEMP)
+    water_sensor_entity_id = config.get(CONF_WATER_SENSOR)
+    water_setpoint_heat = config.get(CONF_WATER_SETPOINT_HEAT)
+    water_setpoint_cool = config.get(CONF_WATER_SETPOINT_COOL)
+    water_setpoint_heat_entity_id = config.get(CONF_WATER_SETPOINT_HEAT_ENTITY)
+    water_setpoint_cool_entity_id = config.get(CONF_WATER_SETPOINT_COOL_ENTITY)
+    water_tolerance = config.get(CONF_WATER_TOLERANCE)
 
     async_add_entities(
         [
@@ -237,6 +273,107 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 unique_id,
                 humidity_sensor_entity_id,
                 consent_entity_id,
+                water_sensor_entity_id,
+                water_setpoint_heat,
+                water_setpoint_cool,
+                water_setpoint_heat_entity_id,
+                water_setpoint_cool_entity_id,
+                water_tolerance,
+                tamper_entity_id,
+                command_climate_entity_id,
+                min_heat_temp,
+                max_heat_temp,
+                min_cool_temp,
+                max_cool_temp,
+            )
+        ]
+    )
+
+
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    """Set up the dual mode generic thermostat from a config entry (UI-based)."""
+    # Merge data and options — options take priority for fields that can be changed.
+    # The options flow writes explicit None tombstones for cleared fields, so a None
+    # value means "cleared" and must not fall back to the data-layer value.
+    config = {**config_entry.data, **config_entry.options}
+
+    def get_or(key, default=None):
+        """Return the config value, treating an explicit None tombstone as the default."""
+        value = config.get(key, default)
+        return default if value is None else value
+
+    unit = hass.config.units.temperature_unit
+
+    # Parse duration fields from dict format (DurationSelector returns {"hours":0,"minutes":5,"seconds":0})
+    def parse_duration(value):
+        """Convert duration dict or timedelta to timedelta, or None."""
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            import datetime
+            return datetime.timedelta(
+                hours=value.get("hours", 0),
+                minutes=value.get("minutes", 0),
+                seconds=value.get("seconds", 0),
+            )
+        return value
+
+    # Parse precision from string to float
+    def parse_precision(value):
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+
+    min_cycle_duration = parse_duration(config.get("min_cycle_duration"))
+    keep_alive = parse_duration(config.get("keep_alive"))
+
+    async_add_entities(
+        [
+            DualModeGenericThermostat(
+                get_or("name", "Generic Thermostat"),
+                config.get("heater"),
+                config.get("cooler"),
+                config.get("target_sensor"),
+                config.get("fan"),
+                get_or("fan_behavior", "neutral"),
+                config.get("dryer"),
+                get_or("dryer_behavior", "neutral"),
+                get_or("reverse_cycle", []),
+                config.get("min_temp"),
+                config.get("max_temp"),
+                config.get("target_temp"),
+                config.get("target_temp_high"),
+                config.get("target_temp_low"),
+                min_cycle_duration,
+                get_or("cold_tolerance", 0.3),
+                get_or("hot_tolerance", 0.3),
+                keep_alive,
+                config.get("initial_hvac_mode"),
+                config.get("away_temp"),
+                config.get("away_temp_heater"),
+                config.get("away_temp_cooler"),
+                parse_precision(config.get("precision")),
+                parse_precision(config.get("target_temp_step")),
+                get_or("enable_heat_cool", False),
+                unit,
+                config.get("unique_id"),
+                config.get("target_humidity_sensor"),
+                config.get("consent_entity"),
+                config.get("water_sensor"),
+                config.get("water_setpoint_heat"),
+                config.get("water_setpoint_cool"),
+                config.get("water_setpoint_heat_entity"),
+                config.get("water_setpoint_cool_entity"),
+                get_or("water_tolerance", 0.3),
+                config.get("tamper_entity"),
+                config.get("command_climate"),
+                config.get("min_heat_temp"),
+                config.get("max_heat_temp"),
+                config.get("min_cool_temp"),
+                config.get("max_cool_temp"),
             )
         ]
     )
@@ -276,6 +413,18 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             unique_id,
             humidity_sensor_entity_id,
             consent_entity_id,
+            water_sensor_entity_id=None,
+            water_setpoint_heat=None,
+            water_setpoint_cool=None,
+            water_setpoint_heat_entity_id=None,
+            water_setpoint_cool_entity_id=None,
+            water_tolerance=DEFAULT_TOLERANCE,
+            tamper_entity_id=None,
+            command_climate_entity_id=None,
+            min_heat_temp=None,
+            max_heat_temp=None,
+            min_cool_temp=None,
+            max_cool_temp=None,
     ):
         """Initialize the thermostat."""
         self._name = name
@@ -290,6 +439,44 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.consent_entity_id = consent_entity_id
         # When no consent entity is configured, consent is always granted
         self._consent_granted = consent_entity_id is None
+
+        # Tamper entity (inverse consent)
+        # When the tamper entity is ON, the thermostat is forced inactive (all devices off),
+        # while retaining the previously selected HVAC mode. Mirrors consent_entity but inverted.
+        # When no tamper entity is configured, tamper is never active.
+        self.tamper_entity_id = tamper_entity_id
+        self._tamper_active = False
+
+        # Physical command-panel climate device (e.g. Sonoff TP-WGZBA)
+        # The device's relay is not wired to anything; it is used purely as an input:
+        #   - its system_mode (off / non-off) drives the dual_mode on/off
+        #   - its setpoint is clamped into the heat/cool limits and applied as the target temp
+        # Actuation stays with heater/cooler switches. running_state is ignored.
+        self.command_climate_entity_id = command_climate_entity_id
+        # On/off of the command panel acts as an additional consent (does not change mode).
+        # Granted by default (and when no command device is configured).
+        self._command_climate_granted = True
+        self._min_heat_temp = min_heat_temp
+        self._max_heat_temp = max_heat_temp
+        self._min_cool_temp = min_cool_temp
+        self._max_cool_temp = max_cool_temp
+
+        # Water temperature guard
+        # water_sensor: optional sensor that reads the water supply temperature
+        # water_setpoint_heat / water_setpoint_heat_entity: threshold for heating mode
+        #   heating allowed when water_temp >= setpoint_heat (water is hot enough)
+        # water_setpoint_cool / water_setpoint_cool_entity: threshold for cooling mode
+        #   cooling allowed when water_temp <= setpoint_cool (water is cold enough)
+        # If no water sensor is configured, the guard is always satisfied.
+        self.water_sensor_entity_id = water_sensor_entity_id
+        self.water_setpoint_heat_entity_id = water_setpoint_heat_entity_id
+        self.water_setpoint_cool_entity_id = water_setpoint_cool_entity_id
+        self._water_setpoint_heat_fixed = water_setpoint_heat    # fixed YAML value for heating (e.g. 30)
+        self._water_setpoint_cool_fixed = water_setpoint_cool    # fixed YAML value for cooling (e.g. 15)
+        self._water_setpoint_heat_entity_value = None            # live value from heating setpoint entity
+        self._water_setpoint_cool_entity_value = None            # live value from cooling setpoint entity
+        self._water_tolerance = water_tolerance
+        self._cur_water_temp = None                              # current water temperature
 
         # Tell Home Assistant that this integration is migrated
         self._enable_turn_on_off_backwards_compatibility = False
@@ -390,11 +577,41 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.register_event_listener(self.dryer_entity_id, self._async_switch_changed)
         self.register_event_listener(self.consent_entity_id, self._async_consent_entity_changed)
 
+        # Water temperature guard listeners
+        self.register_event_listener(self.water_sensor_entity_id, self._async_water_sensor_changed)
+        self.register_event_listener(self.water_setpoint_heat_entity_id, self._async_water_setpoint_entity_changed)
+        self.register_event_listener(self.water_setpoint_cool_entity_id, self._async_water_setpoint_entity_changed)
+
+        # Tamper entity listener (inverse consent)
+        self.register_event_listener(self.tamper_entity_id, self._async_tamper_entity_changed)
+
+        # Command-panel climate device listener
+        self.register_event_listener(self.command_climate_entity_id, self._async_command_climate_changed)
+
         if self.consent_entity_id:
             consent_state = self.hass.states.get(self.consent_entity_id)
             self._consent_granted = self._extract_consent_from_state(consent_state)
             if not self._consent_granted:
                 await self._async_turn_off_all_devices()
+
+        if self.tamper_entity_id:
+            tamper_state = self.hass.states.get(self.tamper_entity_id)
+            self._tamper_active = self._extract_tamper_from_state(tamper_state)
+            if self._tamper_active:
+                await self._async_turn_off_all_devices()
+
+        if self.command_climate_entity_id:
+            command_state = self.hass.states.get(self.command_climate_entity_id)
+            self._command_climate_granted = self._extract_command_grant_from_state(command_state)
+            if not self._command_climate_granted:
+                await self._async_turn_off_all_devices()
+            # If no explicit target_sensor is configured, seed the current
+            # temperature from the command climate's own reading.
+            if self.sensor_entity_id is None and command_state and command_state.state not in (
+                    STATE_UNAVAILABLE,
+                    STATE_UNKNOWN,
+            ):
+                self._async_update_temp_from_command_climate(command_state)
 
         if self._keep_alive:
             self.async_on_remove(
@@ -467,6 +684,23 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if old_state.attributes.get(ATTR_PRESET_MODE) == PRESET_AWAY:
                 self._is_away = True
 
+        # After state restoration, let the command panel's current setpoint drive the
+        # target. This runs post-restore so it isn't clobbered by the restored value,
+        # and so a panel whose state was already established before load takes effect
+        # without waiting for the next state_changed event.
+        if self.command_climate_entity_id:
+            command_state = self.hass.states.get(self.command_climate_entity_id)
+            if command_state and command_state.state not in (
+                    STATE_UNAVAILABLE,
+                    STATE_UNKNOWN,
+            ):
+                command_setpoint = command_state.attributes.get(ATTR_TEMPERATURE)
+                if command_setpoint is not None and self._hvac_mode in (HVAC_MODE_HEAT, HVAC_MODE_COOL):
+                    try:
+                        self._target_temp = self._clamp_command_setpoint(float(command_setpoint))
+                    except (ValueError, TypeError):
+                        pass
+
         # We only want to update the sensors again if the state has already been restored
         @callback
         def _async_startup(event=None):
@@ -487,10 +721,45 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 ):
                     self._async_update_humidity(humidity_sensor_state)
 
+            if self.water_sensor_entity_id:
+                water_sensor_state = self.hass.states.get(self.water_sensor_entity_id)
+                if water_sensor_state and water_sensor_state.state not in (
+                        STATE_UNAVAILABLE,
+                        STATE_UNKNOWN,
+                ):
+                    self._async_update_water_temp(water_sensor_state)
+
+            if self.water_setpoint_heat_entity_id:
+                water_sp_heat_state = self.hass.states.get(self.water_setpoint_heat_entity_id)
+                if water_sp_heat_state and water_sp_heat_state.state not in (
+                        STATE_UNAVAILABLE,
+                        STATE_UNKNOWN,
+                ):
+                    self._async_update_water_setpoint_heat(water_sp_heat_state)
+
+            if self.water_setpoint_cool_entity_id:
+                water_sp_cool_state = self.hass.states.get(self.water_setpoint_cool_entity_id)
+                if water_sp_cool_state and water_sp_cool_state.state not in (
+                        STATE_UNAVAILABLE,
+                        STATE_UNKNOWN,
+                ):
+                    self._async_update_water_setpoint_cool(water_sp_cool_state)
+
         if self.hass.state == CoreState.running:
+            # HA already running (e.g. config reload): read sensors synchronously,
+            # then run the initial control pass with an AWAITED call. Awaiting here
+            # (instead of a fire-and-forget create_task) guarantees the pass runs —
+            # a detached task can be garbage-collected before executing, which left
+            # some thermostats stuck idle after a reload.
             _async_startup()
+            await self._async_control_heating(force=True)
         else:
-            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, _async_startup)
+            # First boot: run sensor read + initial control once HA has started.
+            async def _startup_then_control(event=None):
+                _async_startup(event)
+                await self._async_control_heating(force=True)
+
+            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, _startup_then_control)
 
     @property
     def should_poll(self):
@@ -551,6 +820,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         if self._hvac_mode == HVAC_MODE_OFF:
             return CURRENT_HVAC_OFF
         if not self._consent_granted:
+            return CURRENT_HVAC_IDLE
+        if self._tamper_active:
+            return CURRENT_HVAC_IDLE
+        if not self._command_climate_granted:
+            return CURRENT_HVAC_IDLE
+        if self._is_water_guard_blocked:
             return CURRENT_HVAC_IDLE
         if not self._is_device_active:
             return CURRENT_HVAC_IDLE
@@ -844,6 +1119,252 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 await self._async_control_heating(force=True)
         self.async_write_ha_state()
 
+    # ---------------------------------------------------------------------------
+    # Tamper entity — inverse consent (ON => thermostat inactive)
+    # ---------------------------------------------------------------------------
+
+    def _extract_tamper_from_state(self, state):
+        """Return True if the tamper entity is active (ON)."""
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            # Unavailable/unknown tamper is treated as inactive (don't block operation)
+            return False
+        return state.state == STATE_ON
+
+    @callback
+    async def _async_tamper_entity_changed(self, event: Event[EventStateChangedData]):
+        """Handle tamper entity state changes.
+
+        When the tamper becomes active, turn off all devices (keeping the HVAC mode).
+        When it clears, resume normal control. Mirrors consent handling but inverted.
+        """
+        new_state = event.data.get("new_state")
+        previous = self._tamper_active
+        self._tamper_active = self._extract_tamper_from_state(new_state)
+        if previous != self._tamper_active:
+            if self._tamper_active:
+                await self._async_turn_off_all_devices()
+            else:
+                await self._async_control_heating(force=True)
+        self.async_write_ha_state()
+
+    # ---------------------------------------------------------------------------
+    # Command-panel climate device — read-only input (system_mode + setpoint)
+    # ---------------------------------------------------------------------------
+
+    def _clamp_command_setpoint(self, value):
+        """Clamp a setpoint read from the command climate into the configured limits.
+
+        Uses heat limits when the dual_mode is in HEAT, cool limits when in COOL.
+        Falls back to the global min/max_temp when the mode-specific limits are unset.
+        """
+        if value is None:
+            return None
+        if self._hvac_mode == HVAC_MODE_HEAT:
+            low = self._min_heat_temp if self._min_heat_temp is not None else self._min_temp
+            high = self._max_heat_temp if self._max_heat_temp is not None else self._max_temp
+        elif self._hvac_mode == HVAC_MODE_COOL:
+            low = self._min_cool_temp if self._min_cool_temp is not None else self._min_temp
+            high = self._max_cool_temp if self._max_cool_temp is not None else self._max_temp
+        else:
+            low = self._min_temp
+            high = self._max_temp
+        if low is not None and value < low:
+            return low
+        if high is not None and value > high:
+            return high
+        return value
+
+    @callback
+    def _async_update_temp_from_command_climate(self, state):
+        """Update the current temperature from the command climate's own reading.
+
+        Reads the climate entity's `current_temperature` attribute (e.g. the device's
+        local_temperature). Used only when no explicit target_sensor is configured.
+        """
+        current = state.attributes.get("current_temperature")
+        if current is None:
+            return
+        try:
+            self._cur_temp = float(current)
+        except (ValueError, TypeError) as ex:
+            _LOGGER.error("Unable to read temperature from command climate: %s", ex)
+
+    def _extract_command_grant_from_state(self, state):
+        """Return True if the command climate grants operation (system_mode != off).
+
+        Unavailable/unknown is treated as "granted" so the thermostat keeps working
+        from the UI when the physical panel is offline.
+        """
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return True
+        return state.state != HVAC_MODE_OFF
+
+    @callback
+    async def _async_command_climate_changed(self, event: Event[EventStateChangedData]):
+        """Handle changes on the physical command-panel climate device.
+
+        The device acts as a pure input, treated as an additional consent (like
+        consent_entity) rather than a mode controller:
+          - system_mode off      -> command grant OFF -> thermostat goes inactive
+                                     (devices off), WITHOUT changing the dual_mode HVAC mode
+          - system_mode non-off  -> command grant ON  -> normal control resumes
+          - setpoint             -> clamped into heat/cool limits and applied as target
+        The device is ignored when unavailable/unknown (thermostat keeps working via UI).
+        running_state is ignored (the device relay is not wired to anything).
+        """
+        new_state = event.data.get("new_state")
+
+        # Track whether something we care about actually changed, so we only force
+        # control (bypassing min_cycle_duration) on meaningful changes. Climate
+        # entities emit state_changed for unrelated attributes (screen brightness,
+        # schedules, etc.) that must not switch equipment early.
+        meaningful_change = False
+
+        # 1) On/off acts as consent — never touches the dual_mode HVAC mode.
+        # Unavailable/unknown is treated as GRANTED so the thermostat keeps working
+        # from the UI when the physical panel is offline (see documented behavior).
+        previous_grant = self._command_climate_granted
+        self._command_climate_granted = self._extract_command_grant_from_state(new_state)
+        if previous_grant != self._command_climate_granted:
+            meaningful_change = True
+            if not self._command_climate_granted and self._is_device_active:
+                await self._async_turn_off_all_devices()
+
+        # If the device is unavailable, don't try to read temperature/setpoint from it.
+        if new_state is not None and new_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            # 1b) Use the device's own temperature as current temperature, but ONLY
+            # when no explicit target_sensor is configured (target_sensor wins, so the
+            # user can e.g. average it with another sensor).
+            if self.sensor_entity_id is None:
+                previous_temp = self._cur_temp
+                self._async_update_temp_from_command_climate(new_state)
+                if self._cur_temp != previous_temp:
+                    meaningful_change = True
+
+            # 2) Sync the setpoint from the device, clamped into the configured limits
+            device_setpoint = new_state.attributes.get(ATTR_TEMPERATURE)
+            if device_setpoint is not None and self._hvac_mode in (HVAC_MODE_HEAT, HVAC_MODE_COOL):
+                try:
+                    clamped = self._clamp_command_setpoint(float(device_setpoint))
+                except (ValueError, TypeError):
+                    clamped = None
+                if clamped is not None and clamped != self._target_temp:
+                    self._target_temp = clamped
+                    meaningful_change = True
+
+        # Only force control (bypassing min_cycle_duration) on a meaningful change.
+        # Otherwise run normal control so cycle timing is respected.
+        if meaningful_change:
+            await self._async_control_heating(force=True)
+        else:
+            await self._async_control_heating()
+        self.async_write_ha_state()
+
+    # ---------------------------------------------------------------------------
+    # Water temperature guard — callbacks, helpers and property
+    # ---------------------------------------------------------------------------
+
+    @callback
+    async def _async_water_sensor_changed(self, event: Event[EventStateChangedData]):
+        """Handle water supply temperature sensor changes."""
+        new_state = event.data["new_state"]
+        if new_state is None or new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+        self._async_update_water_temp(new_state)
+        await self._async_control_heating()
+        self.async_write_ha_state()
+
+    @callback
+    async def _async_water_setpoint_entity_changed(self, event: Event[EventStateChangedData]):
+        """Handle dynamic water setpoint entity changes (heat or cool)."""
+        new_state = event.data["new_state"]
+        if new_state is None or new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+        entity_id = event.data.get("entity_id")
+        if entity_id == self.water_setpoint_heat_entity_id:
+            self._async_update_water_setpoint_heat(new_state)
+        elif entity_id == self.water_setpoint_cool_entity_id:
+            self._async_update_water_setpoint_cool(new_state)
+        await self._async_control_heating()
+        self.async_write_ha_state()
+
+    @callback
+    def _async_update_water_temp(self, state):
+        """Update cached water temperature from sensor state."""
+        try:
+            self._cur_water_temp = float(state.state)
+        except ValueError as ex:
+            _LOGGER.error("Unable to update water temperature from sensor: %s", ex)
+
+    @callback
+    def _async_update_water_setpoint_heat(self, state):
+        """Update cached heating water setpoint from entity state."""
+        try:
+            self._water_setpoint_heat_entity_value = float(state.state)
+        except ValueError as ex:
+            _LOGGER.error("Unable to update water heating setpoint from entity: %s", ex)
+
+    @callback
+    def _async_update_water_setpoint_cool(self, state):
+        """Update cached cooling water setpoint from entity state."""
+        try:
+            self._water_setpoint_cool_entity_value = float(state.state)
+        except ValueError as ex:
+            _LOGGER.error("Unable to update water cooling setpoint from entity: %s", ex)
+
+    @property
+    def _effective_water_setpoint_heat(self):
+        """Return the active water setpoint for heating.
+
+        Entity value takes priority over fixed YAML value.
+        Returns None if neither is configured.
+        """
+        if self._water_setpoint_heat_entity_value is not None:
+            return self._water_setpoint_heat_entity_value
+        return self._water_setpoint_heat_fixed
+
+    @property
+    def _effective_water_setpoint_cool(self):
+        """Return the active water setpoint for cooling.
+
+        Entity value takes priority over fixed YAML value.
+        Returns None if neither is configured.
+        """
+        if self._water_setpoint_cool_entity_value is not None:
+            return self._water_setpoint_cool_entity_value
+        return self._water_setpoint_cool_fixed
+
+    def _is_water_guard_satisfied_for_heat(self):
+        """Return True if water is hot enough to allow heating.
+
+        Condition: cur_water_temp >= setpoint_heat - tolerance
+        """
+        if self.water_sensor_entity_id is None:
+            return True
+        setpoint = self._effective_water_setpoint_heat
+        if setpoint is None or self._cur_water_temp is None:
+            # Guard not fully configured or sensor unavailable — allow operation
+            return True
+        return self._cur_water_temp >= setpoint - self._water_tolerance
+
+    def _is_water_guard_satisfied_for_cool(self):
+        """Return True if water is cold enough to allow cooling.
+
+        Condition: cur_water_temp <= setpoint_cool + tolerance
+        """
+        if self.water_sensor_entity_id is None:
+            return True
+        setpoint = self._effective_water_setpoint_cool
+        if setpoint is None or self._cur_water_temp is None:
+            return True
+        return self._cur_water_temp <= setpoint + self._water_tolerance
+
+    def _is_water_guard_satisfied(self, for_heat: bool) -> bool:
+        """Return True if the water guard allows the requested operation."""
+        if for_heat:
+            return self._is_water_guard_satisfied_for_heat()
+        return self._is_water_guard_satisfied_for_cool()
+
     async def _async_control_heating(self, time=None, force=False, previous_mode: HVACMode=None):
         """Check if we need to turn heating on or off."""
         async with self._temp_lock:
@@ -866,6 +1387,50 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 if self._is_device_active:
                     await self._async_turn_off_all_devices()
                 return
+
+            # Tamper guard — when active, force inactive (mirror of consent but inverted)
+            if self._tamper_active:
+                if self._is_device_active:
+                    await self._async_turn_off_all_devices()
+                return
+
+            # Command panel consent — device system_mode off forces inactive (mode unchanged)
+            if not self._command_climate_granted:
+                if self._is_device_active:
+                    await self._async_turn_off_all_devices()
+                return
+
+            # Water temperature guard check
+            # In HEAT_COOL mode the guard is evaluated per-device in the main logic below.
+            # In single-mode (HEAT / COOL / FAN / DRY) we check here and block entirely if unsatisfied.
+            if self.water_sensor_entity_id and self._hvac_mode not in (HVAC_MODE_HEAT_COOL, HVAC_MODE_OFF):
+                # Determine whether the current mode acts as heating or cooling for guard purposes
+                is_heat_action = (
+                    self._hvac_mode == HVAC_MODE_HEAT or
+                    (self._hvac_mode == HVAC_MODE_FAN_ONLY and self.fan_behavior == FAN_MODE_HEAT) or
+                    (self._hvac_mode == HVAC_MODE_DRY and self.dryer_behavior == DRYER_MODE_HEAT)
+                )
+                is_cool_action = (
+                    self._hvac_mode == HVAC_MODE_COOL or
+                    (self._hvac_mode == HVAC_MODE_FAN_ONLY and self.fan_behavior == FAN_MODE_COOL) or
+                    (self._hvac_mode == HVAC_MODE_DRY and self.dryer_behavior == DRYER_MODE_COOL)
+                )
+                if is_heat_action and not self._is_water_guard_satisfied(for_heat=True):
+                    _LOGGER.debug(
+                        "Water guard blocks heating: water_temp=%s, setpoint_heat=%s",
+                        self._cur_water_temp, self._effective_water_setpoint_heat
+                    )
+                    if self._is_device_active:
+                        await self._async_turn_off_all_devices()
+                    return
+                if is_cool_action and not self._is_water_guard_satisfied(for_heat=False):
+                    _LOGGER.debug(
+                        "Water guard blocks cooling: water_temp=%s, setpoint_cool=%s",
+                        self._cur_water_temp, self._effective_water_setpoint_cool
+                    )
+                    if self._is_device_active:
+                        await self._async_turn_off_all_devices()
+                    return
 
             # This check sets the active entity outside of the checks below to make it available for keep-alive logic
             def determine_active_entity():
@@ -937,7 +1502,11 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                         self.heater_entity_id,
                     )
                     await self._async_cooler_turn_off()
-                    await self._async_heater_turn_on()
+                    if self._is_water_guard_satisfied(for_heat=True):
+                        await self._async_heater_turn_on()
+                    else:
+                        _LOGGER.debug("Water guard blocks heater in HEAT_COOL: water_temp=%s", self._cur_water_temp)
+                        await self._async_heater_turn_off()
                 elif too_hot_overshot:
                     _LOGGER.info(
                         "Overshot upper bound! Turning on cooler %s and turning off heater %s",
@@ -945,7 +1514,11 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                         self.heater_entity_id,
                     )
                     await self._async_heater_turn_off()
-                    await self._async_cooler_turn_on()
+                    if self._is_water_guard_satisfied(for_heat=False):
+                        await self._async_cooler_turn_on()
+                    else:
+                        _LOGGER.debug("Water guard blocks cooler in HEAT_COOL: water_temp=%s", self._cur_water_temp)
+                        await self._async_cooler_turn_off()
                 elif time is not None:
                     _LOGGER.info("Keep-alive - Turning on %s", active_entity)
                     if self.hass.states.is_state(self.heater_entity_id, STATE_ON):
@@ -996,11 +1569,17 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 too_cold = self._is_too_cold_activate()
                 too_hot = self._is_too_hot_activate()
                 if too_hot and self._hvac_mode in [HVAC_MODE_COOL, HVAC_MODE_HEAT_COOL]:
-                    _LOGGER.info("Turning on cooler %s", self.cooler_entity_id)
-                    await self._async_cooler_turn_on()
+                    if self._is_water_guard_satisfied(for_heat=False):
+                        _LOGGER.info("Turning on cooler %s", self.cooler_entity_id)
+                        await self._async_cooler_turn_on()
+                    else:
+                        _LOGGER.debug("Water guard blocks cooler activation: water_temp=%s", self._cur_water_temp)
                 elif too_cold and self._hvac_mode in [HVAC_MODE_HEAT, HVAC_MODE_HEAT_COOL]:
-                    _LOGGER.info("Turning on heater %s", self.heater_entity_id)
-                    await self._async_heater_turn_on()
+                    if self._is_water_guard_satisfied(for_heat=True):
+                        _LOGGER.info("Turning on heater %s", self.heater_entity_id)
+                        await self._async_heater_turn_on()
+                    else:
+                        _LOGGER.debug("Water guard blocks heater activation: water_temp=%s", self._cur_water_temp)
                 elif self._hvac_mode == HVAC_MODE_FAN_ONLY:
                     if (
                         (too_hot and self.fan_behavior == FAN_MODE_COOL)
@@ -1047,6 +1626,50 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                   ([self.dryer_entity_id] if self.dryer_entity_id else [])
         device_states = [self.hass.states.is_state(dev, STATE_ON) for dev in devices]
         return next((state for state in device_states if state), False)
+
+    @property
+    def _is_water_guard_blocked(self):
+        """Return True if the water guard is currently blocking operation.
+
+        This is a summary view for hvac_action and extra_state_attributes.
+        In HEAT_COOL mode the guard may block one device but not the other,
+        so we return True only when both relevant checks fail.
+        """
+        if self.water_sensor_entity_id is None:
+            return False
+        if self._hvac_mode == HVAC_MODE_HEAT:
+            return not self._is_water_guard_satisfied(for_heat=True)
+        if self._hvac_mode == HVAC_MODE_COOL:
+            return not self._is_water_guard_satisfied(for_heat=False)
+        if self._hvac_mode in (HVAC_MODE_FAN_ONLY, HVAC_MODE_DRY):
+            is_heat_action = (
+                (self._hvac_mode == HVAC_MODE_FAN_ONLY and self.fan_behavior == FAN_MODE_HEAT) or
+                (self._hvac_mode == HVAC_MODE_DRY and self.dryer_behavior == DRYER_MODE_HEAT)
+            )
+            if is_heat_action:
+                return not self._is_water_guard_satisfied(for_heat=True)
+            is_cool_action = (
+                (self._hvac_mode == HVAC_MODE_FAN_ONLY and self.fan_behavior == FAN_MODE_COOL) or
+                (self._hvac_mode == HVAC_MODE_DRY and self.dryer_behavior == DRYER_MODE_COOL)
+            )
+            if is_cool_action:
+                return not self._is_water_guard_satisfied(for_heat=False)
+        # HEAT_COOL: blocked only if both heater and cooler are blocked
+        if self._hvac_mode == HVAC_MODE_HEAT_COOL:
+            return (not self._is_water_guard_satisfied(for_heat=True) and
+                    not self._is_water_guard_satisfied(for_heat=False))
+        return False
+
+    @property
+    def extra_state_attributes(self):
+        """Return additional state attributes for the water temperature guard."""
+        attrs = {}
+        if self.water_sensor_entity_id:
+            attrs["water_temperature"] = self._cur_water_temp
+            attrs["water_setpoint_heat"] = self._effective_water_setpoint_heat
+            attrs["water_setpoint_cool"] = self._effective_water_setpoint_cool
+            attrs["water_guard_active"] = self._is_water_guard_blocked
+        return attrs
 
     @property
     def supported_features(self):

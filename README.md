@@ -41,6 +41,12 @@ climate:
     min_cycle_duration:
         minutes: 20
     consent_entity: calendar.schedule_time
+    water_sensor: sensor.water_supply_temperature
+    water_setpoint_heat: 30
+    water_setpoint_cool: 15
+    water_setpoint_heat_entity: input_number.water_setpoint_heat
+    water_setpoint_cool_entity: input_number.water_setpoint_cool
+    water_tolerance: 1.0
 ```
 
 ### Possible values for *_behavior
@@ -90,6 +96,113 @@ Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/co
   the thermostat will report its mode and change its behaviour based on the position of these switches.
 
 * `consent_entity`is an optional entity (e.g., `binary_sensor`, `input_boolean`, or `calendar`) that acts as an additional control for the thermostat. When the entity is in the "on" state (or equivalent, such as `true` for calendars), the thermostat operates normally. When the entity is "off" or unavailable, all devices controlled by the thermostat (heater, cooler, dryer, fan) are turned off, but the thermostat retains its previous HVAC mode setting ("keep previous mode"). This allows you to schedule thermostat operation using calendar entities or other logic, without needing separate automations.
+
+## Tamper Entity
+
+`tamper_entity` is an optional entity (e.g. `binary_sensor`, `input_boolean`) that acts as an **inverse consent** control. When the tamper entity is **ON**, the thermostat is forced inactive: all controlled devices (heater, cooler, fan, dryer) are turned off while the previously selected HVAC mode is retained. When the tamper clears (**OFF** or unavailable), normal control resumes.
+
+This is a layer that adds to `consent_entity`, the water guard and `min_cycle_duration` — it does not replace any of them. Use it as a safety interlock (e.g. an open-window or tamper sensor that must stop the thermostat).
+
+## Command Panel (Physical Climate Device)
+
+`command_climate` lets you drive the thermostat from a **physical climate device used purely as a command panel** — for example a Sonoff TP-WGZBA or a boiler thermostat with a dry contact. The device's own relay does not need to be wired to anything; the actuation stays with the `heater`/`cooler` switches. The physical device is used only as an **input**:
+
+* Its `system_mode` acts as an additional consent (it does **not** change the thermostat's HVAC mode):
+    * `off` → the thermostat goes **inactive** (all devices off), but keeps the HVAC mode you selected on the dual mode thermostat
+    * non-off (`heat` / `auto`) → normal control resumes
+* Its setpoint is read and applied as the target temperature, **clamped** into the configured limits:
+    * in `HEAT` mode → clamped between `min_heat_temp` and `max_heat_temp`
+    * in `COOL` mode → clamped between `min_cool_temp` and `max_cool_temp`
+    * if a mode-specific limit is unset, it falls back to the global `min_temp` / `max_temp`
+    * a value outside the range is forced to the nearest limit
+* `running_state` is **ignored** (the relay is not used)
+* If the physical device becomes unavailable, it is **ignored** — the thermostat keeps its last state and continues to work from the Home Assistant UI
+
+The heat/cool clamp limits are optional and additive (fully backward compatible):
+
+| Key | Description |
+|---|---|
+| `min_heat_temp` | Lower clamp for the setpoint synced from the command panel in HEAT mode |
+| `max_heat_temp` | Upper clamp for the setpoint synced from the command panel in HEAT mode |
+| `min_cool_temp` | Lower clamp for the setpoint synced from the command panel in COOL mode |
+| `max_cool_temp` | Upper clamp for the setpoint synced from the command panel in COOL mode |
+
+The mode choice (heat vs cool) always stays on the dual mode thermostat — the physical panel only provides on/off and a setpoint.
+
+### Temperature source
+
+When `command_climate` is configured, its own temperature reading (the climate entity's `current_temperature`, e.g. the device `local_temperature`) is used as the room temperature — so **`target_sensor` becomes optional**. If you configure `target_sensor` as well, it **takes priority** (useful if you want to average the panel reading with another sensor via a template/statistics sensor). At least one of `target_sensor` or `command_climate` must be configured.
+
+### Example Config
+
+```yaml
+climate:
+  - platform: dualmode_generic
+    name: Living Room
+    heater: switch.heating_valve
+    cooler: switch.cooling_valve
+    target_sensor: sensor.room_temperature
+    enable_heat_cool: True
+    tamper_entity: binary_sensor.window_open
+    command_climate: climate.wall_panel
+    min_heat_temp: 16
+    max_heat_temp: 24
+    min_cool_temp: 20
+    max_cool_temp: 28
+```
+
+## Water Temperature Guard
+
+The thermostat supports an optional **water supply temperature guard** that prevents the heater or cooler from activating unless the water circuit has reached the required temperature. This is useful for hydronic systems (e.g., radiant floor heating, fan coils) where the equipment should only run when the boiler or chiller has prepared the water.
+
+### Configuration
+
+| Key | Required | Description |
+|---|---|---|
+| `water_sensor` | Yes (to enable guard) | Entity ID of the sensor measuring the water supply temperature |
+| `water_setpoint_heat` | Optional | Fixed water temperature threshold for heating (float, °C or °F). The heater starts only when water temp ≥ this value |
+| `water_setpoint_cool` | Optional | Fixed water temperature threshold for cooling (float, °C or °F). The cooler starts only when water temp ≤ this value |
+| `water_setpoint_heat_entity` | Optional | Entity whose state provides the heating threshold dynamically (e.g. `input_number`) — takes priority over `water_setpoint_heat` |
+| `water_setpoint_cool_entity` | Optional | Entity whose state provides the cooling threshold dynamically (e.g. `input_number`) — takes priority over `water_setpoint_cool` |
+| `water_tolerance` | Optional (default: `0.3`) | Dead-band tolerance applied to the water setpoint checks |
+
+At least one setpoint (fixed or entity) must be provided for the relevant mode together with `water_sensor` for the guard to function. If no setpoint is configured for a specific mode, the guard is satisfied and operation proceeds normally for that mode.
+
+### Behavior
+
+* **Heating mode** (`heat`, `fan_only` with `fan_behavior: heater`, `dry` with `dryer_behavior: heater`): the device starts only when `water_temp >= water_setpoint_heat - tolerance`. Example: `water_setpoint_heat: 30` with `water_tolerance: 1` → the heater runs when the water supply reaches at least 29°C (`30 - 1`). If the water is not hot enough, all devices are turned off and the action reports `idle`.
+* **Cooling mode** (`cool`, `fan_only` with `fan_behavior: cooler`, `dry` with `dryer_behavior: cooler`): the device starts only when `water_temp <= water_setpoint_cool + tolerance`. Example: `water_setpoint_cool: 15` with `water_tolerance: 1` → the cooler runs when the water supply is at most 16°C (`15 + 1`). If the water is not cold enough, all devices are turned off and the action reports `idle`.
+* **`HEAT_COOL` mode**: the guard is applied independently per device. The heater will not start if the water is not hot enough (checked against `water_setpoint_heat`), and the cooler will not start if the water is not cold enough (checked against `water_setpoint_cool`). The two can operate independently.
+* When the water temperature crosses the threshold (because of a sensor update or a setpoint entity change), `_async_control_heating` is triggered automatically — the device will start or stop without any additional automation needed.
+
+### Additional State Attributes
+
+When `water_sensor` is configured, the following attributes are added to the thermostat entity:
+
+| Attribute | Description |
+|---|---|
+| `water_temperature` | Current water supply temperature from the sensor |
+| `water_setpoint_heat` | The active heating setpoint (entity value if configured, otherwise fixed value) |
+| `water_setpoint_cool` | The active cooling setpoint (entity value if configured, otherwise fixed value) |
+| `water_guard_active` | `true` when the guard is blocking operation |
+
+### Example Config
+
+```yaml
+climate:
+  - platform: dualmode_generic
+    name: Floor Heating & Cooling
+    heater: switch.floor_heating_valve
+    cooler: switch.floor_cooling_valve
+    target_sensor: sensor.room_temperature
+    enable_heat_cool: True
+    water_sensor: sensor.water_supply_temp
+    water_setpoint_heat: 30
+    water_setpoint_cool: 15
+    water_setpoint_heat_entity: input_number.water_setpoint_winter
+    water_setpoint_cool_entity: input_number.water_setpoint_summer
+    water_tolerance: 1.5
+```
 
 
 ## Reporting an Issue
