@@ -92,6 +92,16 @@ Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/co
 * `consent_entity`is an optional entity (e.g., `binary_sensor`, `input_boolean`, or `calendar`) that acts as an additional control for the thermostat. When the entity is in the "on" state (or equivalent, such as `true` for calendars), the thermostat operates normally. When the entity is "off" or unavailable, all devices controlled by the thermostat (heater, cooler, dryer, fan) are turned off, but the thermostat retains its previous HVAC mode setting ("keep previous mode"). This allows you to schedule thermostat operation using calendar entities or other logic, without needing separate automations.
 
 
+## Development
+Tests use [pytest-homeassistant-custom-component](https://github.com/MatthieuDartiailh/pytest-homeassistant-custom-component) and need Python 3.14:
+```sh
+python3.14 -m venv .venv && . .venv/bin/activate
+pip install -r requirements_test.txt
+pytest
+ruff check . && ruff format --check .
+```
+`tests/test_known_bugs.py` holds tests for confirmed bugs, marked as expected failures. When a fix makes one pass, the suite fails until its `xfail` marker is removed.
+
 ## Reporting an Issue
 1. Setup your logger to print debug messages for this component using:
 ```yaml
