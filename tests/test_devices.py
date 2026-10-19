@@ -50,17 +50,15 @@ async def test_mode_change_handover(
     assert thermostat(hass).attributes["temperature"] == 28
 
 
-@pytest.mark.parametrize(
-    ("reverse_cycle", "expected"),
-    [
-        ([], [("turn_off", HEATER), ("turn_on", COOLER)]),
-        ("cooler, heater", [("turn_on", COOLER)]),
-    ],
-)
-async def test_heat_cool_handover(
-    hass: HomeAssistant, reverse_cycle: list | str, expected: list
+@pytest.mark.parametrize("reverse_cycle", [[], "cooler, heater"])
+async def test_heat_cool_handover_turns_off_first(
+    hass: HomeAssistant, reverse_cycle: list | str
 ) -> None:
-    """heat_cool handing heat over to cool counts as a handover too."""
+    """heat_cool handing heat over to cool turns the heater off first, as in 0.2.x.
+
+    reverse_cycle only spans mode changes: with a heater wired as a relay group
+    (heat valve + compressor), keeping it on would keep the valve in heat.
+    """
     await async_setup_thermostat(
         hass,
         temperature=19,
@@ -73,11 +71,7 @@ async def test_heat_cool_handover(
     assert is_on(hass, HEATER)
     recorder = ServiceCallRecorder(hass)
     await async_set_temperature(hass, 25)
-    assert recorder.calls == expected
-
-    # A heater that didn't switch itself off is stopped on the next pass.
-    await async_set_temperature(hass, 25.1)
-    assert devices_on(hass) == {"cooler"}
+    assert recorder.calls == [("turn_off", HEATER), ("turn_on", COOLER)]
 
 
 async def test_shared_heater_and_cooler_entity(hass: HomeAssistant) -> None:

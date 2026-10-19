@@ -8,7 +8,7 @@ A rewrite of the control logic with the same YAML configuration. **No configurat
 
 ### Behavior changes
 
-These are all bug fixes. If you relied on one of the old behaviors, please open an issue.
+Most of these are bug fixes; the rest are noted as deliberate. If you relied on one of the old behaviors, please open an issue.
 
 **Heat/cool mode**
 - The heater and cooler each have their own on/off thresholds. The heater starts at `target_temp_low - cold_tolerance` and stops at `target_temp_low + hot_tolerance`; the cooler mirrors that around `target_temp_high`. Wide ranges behave as before. Narrow ranges (smaller than both tolerances combined) now go idle instead of heating until the cooler takes over. (#83)
@@ -20,18 +20,24 @@ These are all bug fixes. If you relied on one of the old behaviors, please open 
 - When the same entity is configured as both heater and cooler, it is never switched off and on just to change role. `hvac_action` follows the role it's running in.
 
 **`reverse_cycle`**
-- A listed device is skipped when turning devices off only if another device takes over in the same step. That covers both a mode change and heat/cool handing heating over to cooling. Previously it could keep running indefinitely in the new mode, and it stopped the new mode's device from starting. (#36)
-- If nothing takes over, for example when switching to a mode that doesn't need to run yet, the device is turned off.
+- On a mode change, a listed device is no longer explicitly turned off only when another listed device takes over in the same step, i.e. the same unit switching modes. It used to be skipped whatever happened, so it could keep running in the new mode and stopped the new mode's device from starting. (#36)
+- If a device that isn't listed takes over (say a separate fan), or nothing does yet, the outgoing device is turned off.
+- A device that handed over counts as off, even if it still reads on (optimistic template switches do). When it's needed again it is sent "on".
+- Unchanged: `reverse_cycle` only applies to mode changes. In heat/cool, handing heating over to cooling still turns the heater off first. That matters when the heater is a group that shares a relay with the cooler.
 
 **Timing**
 - `min_cycle_duration` is tracked separately for each device. In heat/cool the cooler is now protected too.
+- `min_cycle_duration` counts from the device's actual state changes. A command the device didn't act on is retried without waiting for it.
 - When `min_cycle_duration` holds back a change, the change happens as soon as the duration has passed instead of at the next temperature reading.
+- The heater and cooler never run at the same time. If `min_cycle_duration` keeps one running, the other waits for it.
 - `keep_alive` now re-sends "on" to a running device, which never worked before. In heat/cool it repeats the state of both the heater and the cooler.
+- Deliberate change: `keep_alive` respects `min_cycle_duration`. It used to ignore it.
 
 **Commands sent to devices**
 - In fan-only or dry mode with `neutral` behavior, `turn_on` is no longer re-sent on every temperature update. IR blasters stop beeping on every reading. These modes also run before the sensor has reported, since they don't use the temperature.
-- A command isn't repeated while a device hasn't reported back yet. If the device still hasn't changed after 10 seconds, the command is sent again.
-- Unavailable devices aren't sent commands. They receive the current decision as soon as they come back.
+- A command isn't repeated while a device hasn't reported back yet. If the device still hasn't changed after 10 seconds, the command is re-sent on the next temperature update. Changing the mode, the target or the preset always re-sends.
+- Unavailable devices aren't sent commands, `keep_alive` included. They receive the current decision as soon as they come back.
+- A device that should have been switched off by a mode change, by switching to off, or by consent being revoked, but missed it, is switched off when it shows up on. Being unavailable at the time counts as missing it. This also happens in off mode, until the device reports off.
 - Commands are linked to whatever triggered them, so the logbook shows the cause.
 
 **Turning on, starting up and restoring**
@@ -39,13 +45,14 @@ These are all bug fixes. If you relied on one of the old behaviors, please open 
 - `initial_hvac_mode` is applied when there is no saved state. Before, it was ignored.
 - After a restart, all targets come back: the heat/cool range, the single target (even if the thermostat was in heat/cool), and the targets from before a preset. Choosing fan or dry after a restart in heat/cool no longer fails. (#84)
 - A saved mode that's no longer configured, for example after removing the cooler, falls back to `initial_hvac_mode` or off.
-- The thermostat waits for Home Assistant to finish starting, then acts at once instead of waiting for the next temperature reading.
+- The thermostat waits until Home Assistant has loaded its integrations and is starting up, then acts at once instead of waiting for the next temperature reading.
 
 **Away preset**
 - Away now works in heat/cool. `away_temp_heater` sets the low end of the range and `away_temp_cooler` the high end. A plain `away_temp` only lowers the low end. (#54)
 - Away follows mode changes: switching from heat to cool while away applies `away_temp_cooler`.
 - Leaving away after a restart no longer jumps to `away_temp_cooler`.
 - The away preset is offered whenever any away temperature is configured.
+- Deliberate change: away also sets the target in fan-only and dry mode when their behavior is `heater` or `cooler`. It uses `away_temp_heater` or `away_temp_cooler` respectively, falling back to `away_temp`. It used to change only heat and cool.
 
 **Default targets**
 - In cool mode, and for a fan or dryer with `cooler` behavior, a target that was never set now defaults to `max_temp`, so the device stays off. It used to default to `min_temp`, which ran the device flat out.
@@ -54,12 +61,13 @@ These are all bug fixes. If you relied on one of the old behaviors, please open 
 - `set_temperature` with `hvac_mode` applies both together. The target links to the new mode, and devices switch in a single step.
 
 ### Unchanged on purpose
-- In off mode the thermostat never touches its devices. Switching to off still turns everything off.
+- In off mode the thermostat leaves its devices alone, so you can run them by hand. The exceptions are the same as before: switching to off turns everything off, and revoking consent turns everything off in any mode. The only addition is finishing a switch-off a device missed (above).
 - Heat, cool, fan-only and dry thresholds compare exactly as before: heating starts at `target - cold_tolerance` and stops at `target + hot_tolerance`, both inclusive.
 - If the temperature sensor becomes unavailable, the last reading is kept, as in Home Assistant's built-in generic thermostat.
-- Without `consent_entity` granted, all devices are turned off and the mode is kept.
+- Without `consent_entity` granted, all devices are turned off and the mode is kept. This happens at startup too.
 
 ### Under the hood
 - The control logic now lives in a pure module (`controller.py`), separate from Home Assistant state handling.
 - A test suite covers the integration and runs against Home Assistant 2026.4 and the latest release.
 - Unknown `reverse_cycle` entries are logged and ignored.
+- Humidity sensor updates refresh the displayed humidity without re-running the control logic.

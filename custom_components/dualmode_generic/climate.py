@@ -30,7 +30,6 @@ from homeassistant.components.climate import (
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_TEMPERATURE,
-    EVENT_HOMEASSISTANT_START,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
     STATE_OFF,
@@ -41,7 +40,6 @@ from homeassistant.const import (
 from homeassistant.core import (
     CALLBACK_TYPE,
     Context,
-    CoreState,
     Event,
     EventStateChangedData,
     HassJob,
@@ -61,6 +59,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.reload import async_setup_reload_service
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
+from homeassistant.helpers.start import async_at_start
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.util import dt as dt_util
 
@@ -209,6 +208,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._owners: dict[str, Role] = {}
         self._pending: dict[str, tuple[bool, datetime]] = {}
         self._last_toggled: dict[str, datetime] = {}
+        # Devices a mode change or lack of consent turned off (or tried to) that
+        # haven't reported off yet; turned off whenever they show up on.
+        self._off_owed: set[str] = set()
+        # reverse_cycle devices that another device took over from: they switch
+        # over by themselves, so they count as off even while still reading on.
+        self._replaced: set[str] = set()
         self._recheck_job = HassJob(
             self._async_recheck, "dualmode_generic min_cycle recheck", cancel_on_shutdown=True
         )
@@ -253,14 +258,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self.async_on_remove(self._cancel_recheck)
 
         await self._async_restore()
+        self.async_on_remove(async_at_start(self.hass, self._async_startup))
 
-        if self.hass.state is CoreState.running:
-            await self._async_startup()
-        else:
-            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, self._async_startup)
+    async def _async_startup(self, _hass: HomeAssistant) -> None:
+        """Read the current state of every source and act on it.
 
-    async def _async_startup(self, _event: Event | None = None) -> None:
-        """Read the current state of every source and act on it."""
+        Runs once Home Assistant is starting, or straight away if it already is.
+        """
         config = self._config
         if (state := self.hass.states.get(config.sensor)) and _is_known(state):
             self._async_update_temp(state)
@@ -276,7 +280,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if state := self.hass.states.get(entity_id):
                 self._last_toggled[entity_id] = state.last_changed
         self._started = True
-        await self._async_control()
+        # Without consent everything starts off, whatever the mode (as in 0.2.x).
+        await self._async_control(gate_changed=not self._consent)
         self.async_write_ha_state()
 
     async def _async_restore(self) -> None:
@@ -580,11 +585,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
 
     async def _async_consent_changed(self, event: Event[EventStateChangedData]) -> None:
         granted = _consent_from(event.data["new_state"])
-        if granted != self._consent and self._started:
-            self._consent = granted
+        if granted == self._consent:
+            return
+        self._consent = granted
+        if self._started:
             self.async_set_context(event.context)
-            # Revoking stops everything at once; granting acts right away.
-            await self._async_control(force=True)
+            # Revoking stops every device at once, in any mode; granting acts
+            # right away.
+            await self._async_control(force=True, gate_changed=True)
         self.async_write_ha_state()
 
     @callback
@@ -596,16 +604,22 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             return
         self._pending.pop(entity_id, None)
         if old_state is None or old_state.state != new_state.state:
+            self._replaced.discard(entity_id)
+            # min_cycle_duration counts from real changes, not from commands,
+            # so a command the device never acted on is retried promptly.
             if new_state.state in (STATE_ON, STATE_OFF):
                 self._last_toggled[entity_id] = new_state.last_changed
             if new_state.state == STATE_OFF:
                 self._owners.pop(entity_id, None)
-        # A device that (re)appears gets the thermostat's current decision.
+                self._off_owed.discard(entity_id)
+        # A device that (re)appears gets the thermostat's current decision, and
+        # one that should be off but shows up on is turned off.
         came_back = (old_state is None or not _is_known(old_state)) and new_state.state in (
             STATE_ON,
             STATE_OFF,
         )
-        if came_back and self._started:
+        owed_off = entity_id in self._off_owed and new_state.state == STATE_ON
+        if (came_back or owed_off) and self._started:
             self.hass.async_create_task(self._async_control_and_write(), eager_start=True)
         self.async_write_ha_state()
 
@@ -647,37 +661,52 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
     # ------------------------------------------------------------------
 
     async def _async_control(
-        self, *, force: bool = False, keepalive: bool = False, leaving: HVACMode | None = None
+        self,
+        *,
+        force: bool = False,
+        keepalive: bool = False,
+        leaving: HVACMode | None = None,
+        gate_changed: bool = False,
     ) -> None:
         """Bring the devices in line with the mode and temperatures.
 
-        ``force`` skips min_cycle_duration (user actions). ``keepalive`` repeats
-        commands for the mode's devices. ``leaving`` is the previous mode when
-        the mode just changed: devices outside the new mode are then turned off.
-        Otherwise only the current mode's devices are touched, so a fan switched
-        on by hand for circulation is left alone.
+        ``force`` skips min_cycle_duration and compares with the devices' real
+        state (user actions). ``keepalive`` repeats commands for the mode's
+        devices. ``leaving`` is the previous mode when the mode just changed:
+        devices outside the new mode are then turned off. Otherwise only the
+        current mode's devices are touched, so a fan switched on by hand for
+        circulation is left alone; in off mode nothing is touched except to
+        finish switching devices off. ``gate_changed`` marks a consent change.
         """
         async with self._lock:
             mode = self._hvac_mode
-            if mode is HVACMode.OFF and leaving is None:
-                return
+            switching = leaving is not None
+            replaceable: frozenset[Role] = frozenset()
             desired: dict[Role, bool] = {}
-            if leaving is not None:
-                desired = {role: False for role in self._devices if role not in MODE_ROLES[mode]}
-            # reverse_cycle devices switch over by themselves when another device
-            # takes over (a mode change, or heat_cool handing heat to cool). They
-            # are still turned off when nothing replaces them: off, no consent.
-            replaceable = self._config.reverse_cycle
-            if mode is HVACMode.OFF:
-                replaceable = frozenset()
-            elif self._consent:
-                desired.update(decide(self._snapshot()))
-            else:
+            if not self._consent and (mode is not HVACMode.OFF or switching or gate_changed):
+                # No consent: everything off, whatever the mode (as in 0.2.x).
                 desired = dict.fromkeys(self._devices, False)
-                force = True
-                replaceable = frozenset()
+                force = switching = True
+            elif mode is not HVACMode.OFF or switching:
+                if switching:
+                    mode_entities = self._mode_entities()
+                    desired = {
+                        role: False
+                        for role, entity_id in self._devices.items()
+                        if role not in MODE_ROLES[mode] and entity_id not in mode_entities
+                    }
+                    # reverse_cycle only spans a mode change; heat_cool's own
+                    # handover turns the heater off first, as in 0.2.x.
+                    if mode is not HVACMode.OFF:
+                        replaceable = self._config.reverse_cycle
+                if mode is not HVACMode.OFF:
+                    desired.update(decide(self._snapshot()))
             await self._async_apply(
-                desired, force=force, keepalive=keepalive, replaceable=replaceable
+                desired,
+                force=force,
+                keepalive=keepalive,
+                owe_offs=switching,
+                replaceable=replaceable,
             )
 
     def _snapshot(self) -> Snapshot:
@@ -707,11 +736,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         *,
         force: bool,
         keepalive: bool,
+        owe_offs: bool,
         replaceable: frozenset[Role],
     ) -> None:
         """Send only the commands needed to reach the desired device states."""
         now = dt_util.utcnow()
-        mode_roles = MODE_ROLES[self._hvac_mode]
+        mode_entities = self._mode_entities()
 
         # Several roles can share one entity; it's on if any of them wants it.
         wanted: dict[str, Role | None] = {}
@@ -721,22 +751,40 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 wanted[entity_id] = role
             else:
                 wanted.setdefault(entity_id, None)
+        # Finish switch-offs still owed from earlier, unless the current mode
+        # now decides for that device.
+        self._off_owed -= mode_entities
+        for entity_id in self._off_owed:
+            wanted.setdefault(entity_id, None)
 
         turn_on: list[str] = []
         turn_off: list[str] = []
         resend: list[tuple[str, bool]] = []
         for entity_id, role in wanted.items():
             on = role is not None
-            if role is not None:
+            if on:
                 self._owners[entity_id] = role
-            if self._entity_on(entity_id) == on:
-                if keepalive and any(r in mode_roles for r in self._entity_roles[entity_id]):
+                self._off_owed.discard(entity_id)
+            available = self._entity_available(entity_id)
+            # User actions compare with the real state; otherwise a command
+            # still in flight counts as done, so it isn't repeated.
+            current = self._entity_on(entity_id, actual=force)
+            if on and entity_id in self._replaced:
+                current = False  # it may still read on after handing over
+            if not on and owe_offs and (current or not available):
+                self._off_owed.add(entity_id)
+            if not available:
+                if current != on:
+                    _LOGGER.debug(
+                        "%s: %s is unavailable, not switching it", self.entity_id, entity_id
+                    )
+                continue
+            if current == on:
+                if keepalive and entity_id in mode_entities:
                     resend.append((entity_id, on))
                 continue
-            if not self._entity_available(entity_id):
-                _LOGGER.debug("%s: %s is unavailable, not switching it", self.entity_id, entity_id)
-                continue
-            if not force and (wait := self._cycle_remaining(entity_id, now)) is not None:
+            owed = entity_id in self._off_owed
+            if not (force or owed) and (wait := self._cycle_remaining(entity_id, now)) is not None:
                 _LOGGER.debug(
                     "%s: min_cycle_duration keeps %s %s for %s more",
                     self.entity_id,
@@ -748,12 +796,35 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 continue
             (turn_on if on else turn_off).append(entity_id)
 
-        if turn_on and replaceable:
-            turn_off = [
-                entity_id
-                for entity_id in turn_off
-                if not replaceable.intersection(self._entity_roles[entity_id])
-            ]
+        # reverse_cycle: when one reverse-cycle device takes over from another
+        # (the same unit, switching mode), the outgoing one switches over by
+        # itself, so it isn't turned off explicitly.
+        if replaceable and any(replaceable.intersection(self._entity_roles[e]) for e in turn_on):
+            kept = []
+            for entity_id in turn_off:
+                if replaceable.intersection(self._entity_roles[entity_id]):
+                    self._replaced.add(entity_id)
+                    self._off_owed.discard(entity_id)
+                else:
+                    kept.append(entity_id)
+            turn_off = kept
+
+        # Never run a heater and a cooler together: if one's switch-off is held
+        # back (min_cycle_duration), the other waits too.
+        heater = self._devices.get(Role.HEATER)
+        cooler = self._devices.get(Role.COOLER)
+        if heater and cooler and heater != cooler:
+
+            def on_after(entity_id: str) -> bool:
+                return entity_id in turn_on or (
+                    entity_id not in turn_off
+                    and entity_id not in self._replaced
+                    and self._entity_on(entity_id, actual=True)
+                )
+
+            if on_after(heater) and on_after(cooler):
+                _LOGGER.debug("%s: holding back start until the other device stops", self.entity_id)
+                turn_on = [e for e in turn_on if e not in (heater, cooler)]
 
         # Break before make.
         for entity_id in turn_off:
@@ -770,9 +841,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             )
         else:
             _LOGGER.info("%s: turning %s %s", self.entity_id, entity_id, "on" if on else "off")
-            now = dt_util.utcnow()
-            self._pending[entity_id] = (on, now)
-            self._last_toggled[entity_id] = now
+            self._pending[entity_id] = (on, dt_util.utcnow())
+            self._replaced.discard(entity_id)
             if not on:
                 self._owners.pop(entity_id, None)
         parent = self._context
@@ -793,7 +863,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         ``actual`` ignores commands still in flight, for reporting.
         """
         entity_id = self._devices[role]
-        if not self._entity_on(entity_id, actual=actual):
+        if not self._entity_on(entity_id, actual=actual) or entity_id in self._replaced:
             return False
         sharers = self._entity_roles[entity_id]
         if len(sharers) == 1:
@@ -815,6 +885,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 return on
             del self._pending[entity_id]
         return self.hass.states.is_state(entity_id, STATE_ON)
+
+    def _mode_entities(self) -> set[str]:
+        """Return the entities the current mode controls."""
+        return {
+            self._devices[role] for role in MODE_ROLES[self._hvac_mode] if role in self._devices
+        }
 
     def _entity_available(self, entity_id: str) -> bool:
         state = self.hass.states.get(entity_id)

@@ -1,6 +1,7 @@
 """Regression tests for bugs fixed in 1.0.
 
-Each reproduces a bug confirmed in 0.2.x (issue numbers in the comments).
+Each reproduces a bug confirmed in 0.2.x (issue numbers in the comments), or
+one found while reviewing the 1.0 rewrite (last section).
 """
 
 from datetime import timedelta
@@ -8,11 +9,13 @@ from datetime import timedelta
 import pytest
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.climate import HVACAction
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_START
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from .common import (
+    CONSENT,
     COOLER,
     DRYER,
     FAN,
@@ -285,3 +288,181 @@ async def test_mode_switch_starts_new_device_immediately(
     assert devices_on(hass) == {"fan" if first == "fan_only" else "dryer"}
     await async_call(hass, "set_hvac_mode", hvac_mode=second)
     assert devices_on(hass) == {expected}
+
+
+# --- Found in review of the 1.0 rewrite -------------------------------------
+# A device with no integration behind it: commands are recorded, but its state
+# only changes when the test says so (a lossy RF, Zigbee or Z-Wave switch).
+RF_HEATER = "switch.rf_heater"
+
+
+async def test_set_up_between_start_event_and_running(hass: HomeAssistant) -> None:
+    """A platform that finishes loading after HA's start event still takes control."""
+    hass.set_state(CoreState.starting)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    await hass.async_block_till_done()
+    await async_setup_thermostat(hass, temperature=25, target_temp=21)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_toggle(hass, HEATER, True)
+    hass.set_state(CoreState.running)
+    await async_set_temperature(hass, 26)
+    assert not is_on(hass, HEATER)
+
+
+async def test_heat_cool_min_cycle_never_runs_both(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """While min_cycle_duration keeps the heater on, the cooler doesn't start alongside it."""
+    await async_setup_thermostat(
+        hass,
+        temperature=20.6,
+        enable_heat_cool=True,
+        target_temp_low=21,
+        target_temp_high=22,
+        min_cycle_duration={"minutes": 20},
+    )
+    freezer.tick(timedelta(minutes=30))
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    assert devices_on(hass) == {"heater"}
+    freezer.tick(timedelta(minutes=10))
+    await async_set_temperature(hass, 22.4)
+    assert devices_on(hass) == {"heater"}
+
+    # Once the heater may stop, the cooler takes over.
+    freezer.tick(timedelta(minutes=10, seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert devices_on(hass) == {"cooler"}
+
+
+@pytest.mark.parametrize("new_mode", ["cool", "off"])
+async def test_device_unavailable_during_mode_change(hass: HomeAssistant, new_mode: str) -> None:
+    """A heater that missed its switch-off is turned off when it comes back."""
+    hass.states.async_set(RF_HEATER, "off")
+    await async_setup_thermostat(hass, temperature=18, heater=RF_HEATER, target_temp=22)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    hass.states.async_set(RF_HEATER, "on")
+    hass.states.async_set(RF_HEATER, "unavailable")
+    await hass.async_block_till_done()
+    await async_call(hass, "set_hvac_mode", hvac_mode=new_mode)
+    recorder = ServiceCallRecorder(hass)
+    hass.states.async_set(RF_HEATER, "on")  # back, and still heating
+    await hass.async_block_till_done()
+    assert recorder.calls == [("turn_off", RF_HEATER)]
+
+    # Once it reports off, the thermostat leaves it alone again.
+    hass.states.async_set(RF_HEATER, "off")
+    await hass.async_block_till_done()
+    recorder.clear()
+    await async_set_temperature(hass, 18.5)
+    assert ("turn_off", RF_HEATER) not in recorder.calls
+
+
+async def test_switch_to_off_resends_lost_turn_off(hass: HomeAssistant) -> None:
+    """Switching to off re-sends a turn_off the device hasn't acted on yet."""
+    hass.states.async_set(RF_HEATER, "off")
+    await async_setup_thermostat(hass, temperature=18, heater=RF_HEATER, target_temp=22)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    hass.states.async_set(RF_HEATER, "on")
+    await hass.async_block_till_done()
+    recorder = ServiceCallRecorder(hass)
+    await async_set_temperature(hass, 23)  # turn_off sent but lost
+    await async_call(hass, "set_hvac_mode", hvac_mode="off")
+    assert recorder.calls == [("turn_off", RF_HEATER)] * 2
+
+
+async def test_off_mode_keeps_finishing_the_switch_off(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """In off mode a device still on after the switch to off gets it re-sent."""
+    hass.states.async_set(RF_HEATER, "on")
+    await async_setup_thermostat(hass, temperature=18, heater=RF_HEATER, target_temp=22)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    recorder = ServiceCallRecorder(hass)
+    await async_call(hass, "set_hvac_mode", hvac_mode="off")
+    freezer.tick(timedelta(seconds=11))
+    await async_set_temperature(hass, 18.1)
+    assert recorder.calls == [("turn_off", RF_HEATER)] * 2
+
+
+async def test_lost_turn_off_not_held_by_min_cycle(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """min_cycle_duration counts from real changes, so a lost turn_off is retried promptly."""
+    hass.states.async_set(RF_HEATER, "off")
+    await async_setup_thermostat(
+        hass, temperature=18, heater=RF_HEATER, target_temp=22, min_cycle_duration={"minutes": 20}
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    hass.states.async_set(RF_HEATER, "on")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(minutes=30))
+    recorder = ServiceCallRecorder(hass)
+    await async_set_temperature(hass, 23)  # lost
+    freezer.tick(timedelta(seconds=30))
+    await async_set_temperature(hass, 23.1)
+    assert recorder.calls == [("turn_off", RF_HEATER)] * 2
+
+
+async def test_reverse_cycle_needs_a_reverse_cycle_successor(hass: HomeAssistant) -> None:
+    """A separate fan taking over doesn't count as the reverse-cycle unit switching over."""
+    await async_setup_thermostat(
+        hass, temperature=18, target_temp=22, fan=FAN, reverse_cycle="heater, cooler"
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    assert is_on(hass, HEATER)
+    await async_call(hass, "set_hvac_mode", hvac_mode="fan_only")
+    assert devices_on(hass) == {"fan"}
+
+
+async def test_reverse_cycle_device_recommanded_after_handover(hass: HomeAssistant) -> None:
+    """A device that handed over (and may still read on) is told to start again later."""
+    await async_setup_thermostat(
+        hass, temperature=26, target_temp=22, reverse_cycle="cooler, heater"
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="cool")
+    await async_call(hass, "set_temperature", temperature=28, hvac_mode="heat")
+    assert is_on(hass, COOLER)  # an optimistic template switch keeps reading on
+    assert thermostat(hass).attributes["hvac_action"] == HVACAction.HEATING
+
+    recorder = ServiceCallRecorder(hass)
+    await async_call(hass, "set_temperature", temperature=22, hvac_mode="cool")
+    assert recorder.calls == [("turn_on", COOLER)]
+
+
+async def test_shared_entity_kept_across_mode_change(hass: HomeAssistant) -> None:
+    """Leaving heat_cool for heat doesn't switch off an entity heat mode still uses."""
+    await async_setup_thermostat(
+        hass,
+        temperature=None,
+        cooler=HEATER,
+        enable_heat_cool=True,
+        target_temp_low=20,
+        target_temp_high=24,
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    await async_toggle(hass, HEATER, True)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    assert is_on(hass, HEATER)
+
+
+async def test_keep_alive_skips_unavailable(hass: HomeAssistant) -> None:
+    """keep_alive doesn't send commands to unavailable devices."""
+    hass.states.async_set(RF_HEATER, "unavailable")
+    await async_setup_thermostat(
+        hass, temperature=25, heater=RF_HEATER, target_temp=22, keep_alive={"minutes": 5}
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    recorder = ServiceCallRecorder(hass)
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=5, seconds=1))
+    await hass.async_block_till_done()
+    assert recorder.calls == []
+
+
+async def test_consent_revoked_in_off_mode_stops_devices(hass: HomeAssistant) -> None:
+    """Revoking consent turns everything off in any mode, as in 0.2.x."""
+    await async_setup_thermostat(hass, consent_entity=CONSENT)
+    await async_toggle(hass, CONSENT, True)
+    await async_toggle(hass, HEATER, True)  # switched on by hand while off
+    await async_toggle(hass, CONSENT, False)
+    assert devices_on(hass) == set()

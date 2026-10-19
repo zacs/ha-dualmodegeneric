@@ -171,7 +171,7 @@ async def test_acts_at_startup_without_waiting_for_a_reading(hass: HomeAssistant
 async def test_waits_for_startup_before_acting(hass: HomeAssistant) -> None:
     """Readings that arrive while Home Assistant is still starting don't act early."""
     mock_restore_cache(hass, [State(ENTITY, "heat", {"temperature": 21})])
-    hass.set_state(CoreState.starting)
+    hass.set_state(CoreState.not_running)  # integrations load before HA starts
     await async_setup_thermostat(hass, temperature=18)
     await async_set_temperature(hass, 17)
     assert not is_on(hass, HEATER)
