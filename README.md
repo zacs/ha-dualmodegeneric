@@ -4,6 +4,8 @@
 
 This component is a straightfoward fork of the mainline `generic_thermostat`.
 
+Requires Home Assistant 2026.4 or newer. See [CHANGELOG.md](CHANGELOG.md) for what changed in 1.0.
+
 ## Installation (HACS) - Recommended
 0. Have [HACS](https://custom-components.github.io/hacs/installation/manual/) installed, this will allow you to easily update
 1. Add `https://github.com/zacs/ha-dualmodegeneric` as a [custom repository](https://custom-components.github.io/hacs/usage/settings/#add-custom-repositories) as Type: Integration

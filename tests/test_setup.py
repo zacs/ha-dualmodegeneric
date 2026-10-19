@@ -203,8 +203,6 @@ async def test_readme_example(hass: HomeAssistant) -> None:
     )
 
 
-# TODO(phase 1): track keep_alive with cancel_on_shutdown=True and drop this marker.
-@pytest.mark.parametrize("expected_lingering_timers", [True])
 async def test_every_documented_option(hass: HomeAssistant) -> None:
     """All options the integration documents or inherits load together."""
     await async_setup_thermostat(

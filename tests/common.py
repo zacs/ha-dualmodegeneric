@@ -13,7 +13,7 @@ from homeassistant.const import (
     EVENT_HOMEASSISTANT_START,
     STATE_ON,
 )
-from homeassistant.core import CoreState, Event, HomeAssistant, State
+from homeassistant.core import CoreState, Event, HomeAssistant, State, callback
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import mock_restore_cache
 
@@ -131,6 +131,9 @@ class ServiceCallRecorder:
         self.calls: list[tuple[str, str]] = []
         self._unsub = hass.bus.async_listen(EVENT_CALL_SERVICE, self._record)
 
+    # @callback runs it inline; a plain function would run in the executor
+    # and record concurrent calls in arbitrary order.
+    @callback
     def _record(self, event: Event) -> None:
         if event.data["domain"] != "homeassistant":
             return

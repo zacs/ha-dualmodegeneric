@@ -50,3 +50,44 @@ async def test_away_temp_is_the_fallback(hass: HomeAssistant) -> None:
     await async_call(hass, "set_hvac_mode", hvac_mode="cool")
     await async_call(hass, "set_preset_mode", preset_mode="away")
     assert thermostat(hass).attributes["temperature"] == 18
+
+
+async def test_away_follows_mode_changes(hass: HomeAssistant) -> None:
+    """Changing mode while away applies the new mode's away temperature."""
+    await async_setup_thermostat(hass, target_temp=22, away_temp_heater=16, away_temp_cooler=28)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_preset_mode", preset_mode="away")
+    await async_call(hass, "set_hvac_mode", hvac_mode="cool")
+    assert thermostat(hass).attributes["temperature"] == 28
+    await async_call(hass, "set_preset_mode", preset_mode="none")
+    assert thermostat(hass).attributes["temperature"] == 22
+
+
+async def test_plain_away_temp_in_heat_cool(hass: HomeAssistant) -> None:
+    """A single away_temp lowers the heating end of the range and keeps the cooling end."""
+    await async_setup_thermostat(
+        hass, enable_heat_cool=True, target_temp_low=20, target_temp_high=24, away_temp=16
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    await async_call(hass, "set_preset_mode", preset_mode="away")
+    attributes = thermostat(hass).attributes
+    assert (attributes["target_temp_low"], attributes["target_temp_high"]) == (16, 24)
+    await async_call(hass, "set_preset_mode", preset_mode="none")
+    attributes = thermostat(hass).attributes
+    assert (attributes["target_temp_low"], attributes["target_temp_high"]) == (20, 24)
+
+
+async def test_no_preset_support_without_away_temps(hass: HomeAssistant) -> None:
+    """Without away temperatures there are no presets to offer."""
+    await async_setup_thermostat(hass)
+    attributes = thermostat(hass).attributes
+    assert "preset_modes" not in attributes
+    assert "preset_mode" not in attributes
+
+
+async def test_any_away_temperature_enables_away(hass: HomeAssistant) -> None:
+    """A heater-only thermostat with just away_temp_heater gets the away preset."""
+    await async_setup_thermostat(hass, cooler=None, target_temp=22, away_temp_heater=16)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_preset_mode", preset_mode="away")
+    assert thermostat(hass).attributes["temperature"] == 16

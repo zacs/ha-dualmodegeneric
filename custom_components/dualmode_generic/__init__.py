@@ -1,4 +1,1 @@
-"""The dualmode_generic thermostat component."""
-
-DOMAIN = "dualmode_generic"
-PLATFORMS = ["climate"]
+"""The dualmode_generic thermostat integration."""
