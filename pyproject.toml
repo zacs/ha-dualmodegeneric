@@ -1,0 +1,24 @@
+[project]
+name = "ha-dualmodegeneric"
+description = "Multi-mode generic thermostat for Home Assistant"
+requires-python = ">=3.14"
+version = "0.0.0"  # The released version lives in custom_components/dualmode_generic/manifest.json
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+xfail_strict = true
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+# The legacy climate.py is rewritten in phase 1; lint it then rather than churn it now.
+extend-exclude = ["custom_components/dualmode_generic/climate.py"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "PT", "RUF", "SIM", "UP", "W"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components"]

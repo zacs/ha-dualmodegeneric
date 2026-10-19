@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Install ruff
+        run: pip install "$(grep '^ruff==' requirements_test.txt)"
+      - run: ruff check --output-format=github .
+      - run: ruff format --check .
+
+  pytest:
+    name: pytest (HA ${{ matrix.ha }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Oldest supported Home Assistant release.
+          - ha: "2026.4.0"
+            install: pytest-homeassistant-custom-component==0.13.321
+          # Latest release; the pin in requirements_test.txt is kept current by Dependabot.
+          - ha: latest
+            install: -r requirements_test.txt
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+      - name: Install dependencies
+        run: pip install ${{ matrix.install }}
+      - run: pytest

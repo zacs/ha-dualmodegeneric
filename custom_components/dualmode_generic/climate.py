@@ -28,7 +28,6 @@ from homeassistant.components.climate.const import (
     HVACMode,
     HVACAction,
 )
-from homeassistant.components.zwave_js.config_validation import boolean
 
 from homeassistant.const import (
     ATTR_ENTITY_ID,

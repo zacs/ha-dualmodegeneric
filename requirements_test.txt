@@ -1,0 +1,4 @@
+# Test and lint dependencies (latest supported Home Assistant).
+# CI also runs the suite against the oldest supported version; see .github/workflows/tests.yml.
+pytest-homeassistant-custom-component==0.13.373
+ruff==0.17.1
