@@ -56,8 +56,10 @@ async def test_create_full(hass: HomeAssistant, entity_registry: er.EntityRegist
     )
     assert result["step_id"] == "presets"
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"away_temp_heater": 16, "away_temp_cooler": 28}
+        result["flow_id"], {"away": {"away_temp_heater": 16, "away_temp_cooler": 28}}
     )
+    assert result["step_id"] == "interlocks"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Living room"
     assert result["data"] == {}
@@ -109,8 +111,14 @@ async def test_single_device_skips_behavior(hass: HomeAssistant) -> None:
         result["flow_id"], {"cold_tolerance": 0.3, "hot_tolerance": 0.3}
     )
     assert result["step_id"] == "presets"
+    schema = result["data_schema"].schema
+    assert {str(key) for key in schema} == {"away", "comfort", "eco", "home", "sleep", "activity"}
+    away = next(value for key, value in schema.items() if key == "away")
+    assert {str(key) for key in away.schema.schema} == {"away_temp", "away_temp_heater"}
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["step_id"] == "interlocks"
     schema_keys = {str(key) for key in result["data_schema"].schema}
-    assert schema_keys == {"away_temp", "away_temp_heater", "consent_entity"}
+    assert schema_keys == {"consent_entity", "tamper_entity", "water_guard"}
 
 
 async def test_needs_a_device(hass: HomeAssistant) -> None:
@@ -151,17 +159,19 @@ async def test_settings_validation(
 async def _entry(hass: HomeAssistant, **options: Any) -> MockConfigEntry:
     await async_setup_devices(hass)
     hass.states.async_set(SENSOR, "20")
+    options = {
+        "name": "Living room",
+        "target_sensor": SENSOR,
+        "heater": HEATER,
+        "cold_tolerance": 0.3,
+        "hot_tolerance": 0.3,
+        **options,
+    }
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Living room",
-        options={
-            "name": "Living room",
-            "target_sensor": SENSOR,
-            "heater": HEATER,
-            "cold_tolerance": 0.3,
-            "hot_tolerance": 0.3,
-            **options,
-        },
+        # A value of None drops the key.
+        options={key: value for key, value in options.items() if value is not None},
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -174,11 +184,11 @@ async def test_options_menu(hass: HomeAssistant) -> None:
     entry = await _entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.MENU
-    assert result["menu_options"] == ["devices", "settings", "presets"]
+    assert result["menu_options"] == ["devices", "settings", "presets", "interlocks"]
 
     entry = await _entry(hass, cooler=COOLER)
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["menu_options"] == ["devices", "behavior", "settings", "presets"]
+    assert result["menu_options"] == ["devices", "behavior", "settings", "presets", "interlocks"]
 
 
 async def test_options_edit_settings(hass: HomeAssistant) -> None:
@@ -305,3 +315,178 @@ async def test_options_turning_off_heat_cool_forgets_its_range(hass: HomeAssista
     assert result["type"] is FlowResultType.CREATE_ENTRY
     for key in ("target_temp_low", "target_temp_high", "initial_hvac_mode"):
         assert key not in entry.options
+
+
+async def _options_step(hass: HomeAssistant, entry: MockConfigEntry, step: str) -> dict[str, Any]:
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": step}
+    )
+
+
+def _suggested(schema: Any) -> dict[str, Any]:
+    """Return the suggested values of a form, nested by section."""
+    values: dict[str, Any] = {}
+    for key, value in schema.schema.items():
+        if hasattr(value, "schema") and hasattr(value, "options"):  # a section
+            values[str(key)] = _suggested(value.schema)
+        elif key.description and "suggested_value" in key.description:
+            values[str(key)] = key.description["suggested_value"]
+    return values
+
+
+async def test_presets_saved_flat(hass: HomeAssistant) -> None:
+    """Preset sections are saved as plain options, and emptying a field removes it."""
+    entry = await _entry(hass, cooler=COOLER, away_temp=16)
+    result = await _options_step(hass, entry, "presets")
+    assert _suggested(result["data_schema"])["away"] == {"away_temp": 16}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"away": {}, "eco": {"eco_temp_heater": 18, "eco_temp_cooler": 26}}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert "away_temp" not in entry.options
+    assert (entry.options["eco_temp_heater"], entry.options["eco_temp_cooler"]) == (18, 26)
+    assert hass.states.get(ENTITY).attributes["preset_modes"] == ["none", "eco"]
+
+
+async def test_device_tolerances_saved_flat(hass: HomeAssistant) -> None:
+    """Separate heater and cooler tolerances are only offered with both devices."""
+    entry = await _entry(hass)
+    result = await _options_step(hass, entry, "settings")
+    assert "device_tolerances" not in {str(key) for key in result["data_schema"].schema}
+
+    entry = await _entry(hass, cooler=COOLER)
+    result = await _options_step(hass, entry, "settings")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "cold_tolerance": 0.3,
+            "hot_tolerance": 0.3,
+            "device_tolerances": {"heater_hot_tolerance": 0},
+            "max_cycle_duration": {"hours": 1, "minutes": 0, "seconds": 0},
+            "cycle_cooldown": {"hours": 0, "minutes": 10, "seconds": 0},
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options["heater_hot_tolerance"] == 0
+    assert "device_tolerances" not in entry.options
+
+
+async def test_max_must_exceed_min(hass: HomeAssistant) -> None:
+    """A maximum run time no longer than the minimum is refused."""
+    entry = await _entry(hass)
+    result = await _options_step(hass, entry, "settings")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "cold_tolerance": 0.3,
+            "hot_tolerance": 0.3,
+            "min_cycle_duration": {"hours": 0, "minutes": 10, "seconds": 0},
+            "max_cycle_duration": {"hours": 0, "minutes": 5, "seconds": 0},
+        },
+    )
+    assert result["errors"] == {"base": "max_below_min"}
+
+
+async def test_fan_with(hass: HomeAssistant) -> None:
+    """The fan can be set to run with the heater; not when it's a reverse-cycle device."""
+    entry = await _entry(hass, fan=FAN)
+    result = await _options_step(hass, entry, "behavior")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"fan_behavior": "neutral", "fan_with": ["heater"], "reverse_cycle": ["heater", "fan"]},
+    )
+    assert result["errors"] == {"base": "fan_with_reverse_cycle"}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "fan_behavior": "neutral",
+            "fan_with": ["heater"],
+            "fan_off_delay": {"hours": 0, "minutes": 2, "seconds": 0},
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert hass.states.get(ENTITY).attributes["fan_modes"] == ["auto", "on", "off"]
+
+    # Removing the fan forgets what it ran with.
+    result = await _options_step(hass, entry, "devices")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"target_sensor": SENSOR, "heater": HEATER}
+    )
+    assert "fan_with" not in entry.options
+    assert "fan_off_delay" not in entry.options
+
+
+async def test_interlocks(hass: HomeAssistant) -> None:
+    """Tamper and the water guard are saved flat; setpoints need a water sensor."""
+    entry = await _entry(hass)
+    result = await _options_step(hass, entry, "interlocks")
+    water = next(
+        value for key, value in result["data_schema"].schema.items() if key == "water_guard"
+    )
+    # Only a heater: no cooling setpoints.
+    assert {str(key) for key in water.schema.schema} == {
+        "water_sensor",
+        "water_setpoint_heat",
+        "water_setpoint_heat_entity",
+        "water_tolerance",
+    }
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"water_guard": {"water_setpoint_heat": 30}}
+    )
+    assert result["errors"] == {"base": "water_needs_sensor"}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "tamper_entity": "binary_sensor.window",
+            "water_guard": {"water_sensor": "sensor.water", "water_setpoint_heat": 30},
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options["tamper_entity"] == "binary_sensor.window"
+    assert (entry.options["water_sensor"], entry.options["water_setpoint_heat"]) == (
+        "sensor.water",
+        30,
+    )
+
+
+async def test_behavior_change_forgets_water_setpoint(hass: HomeAssistant) -> None:
+    """A fan that no longer heats drops the heating water setpoint it alone needed."""
+    entry = await _entry(
+        hass,
+        heater=None,
+        fan=FAN,
+        fan_behavior="heater",
+        water_sensor="sensor.water",
+        water_setpoint_heat=30,
+    )
+    result = await _options_step(hass, entry, "behavior")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"fan_behavior": "neutral"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert "water_setpoint_heat" not in entry.options
+    assert "water_sensor" not in entry.options
+
+
+async def test_removing_cooler_forgets_cooling_settings(hass: HomeAssistant) -> None:
+    """Cooling temperatures of presets, tolerances and the guard go with the cooler."""
+    entry = await _entry(
+        hass,
+        cooler=COOLER,
+        eco_temp_cooler=26,
+        eco_temp_heater=18,
+        cooler_hot_tolerance=1,
+        water_sensor="sensor.water",
+        water_setpoint_cool=15,
+    )
+    result = await _options_step(hass, entry, "devices")
+    await hass.config_entries.options.async_configure(
+        result["flow_id"], {"target_sensor": SENSOR, "heater": HEATER}
+    )
+    for key in ("eco_temp_cooler", "cooler_hot_tolerance", "water_setpoint_cool"):
+        assert key not in entry.options
+    assert entry.options["eco_temp_heater"] == 18
+    assert entry.options["water_sensor"] == "sensor.water"

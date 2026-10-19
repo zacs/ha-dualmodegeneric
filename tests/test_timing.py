@@ -13,6 +13,7 @@ from .common import (
     ServiceCallRecorder,
     async_call,
     async_set_temperature,
+    async_setup_restored,
     async_setup_thermostat,
     devices_on,
     is_on,
@@ -143,3 +144,98 @@ async def test_keep_alive_does_nothing_when_off(hass: HomeAssistant) -> None:
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=5, seconds=1))
     await hass.async_block_till_done()
     assert recorder.calls == []
+
+
+async def test_max_cycle_stops_a_long_run(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """A device is stopped after max_cycle_duration even if it's still needed."""
+    await async_setup_thermostat(
+        hass, temperature=18, target_temp=22, max_cycle_duration={"minutes": 30}
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    assert is_on(hass, HEATER)
+
+    freezer.tick(timedelta(minutes=30, seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert not is_on(hass, HEATER)
+
+    # Without a cooldown it starts again with the next reading.
+    await async_set_temperature(hass, 18.1)
+    assert is_on(hass, HEATER)
+
+
+async def test_cooldown_after_max_cycle(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """max_cycle_duration with cycle_cooldown makes the device rest, then resume."""
+    await async_setup_thermostat(
+        hass,
+        temperature=18,
+        target_temp=22,
+        max_cycle_duration={"minutes": 30},
+        cycle_cooldown={"minutes": 10},
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    freezer.tick(timedelta(minutes=30, seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert not is_on(hass, HEATER)
+
+    await async_set_temperature(hass, 18.1)
+    assert not is_on(hass, HEATER)
+
+    freezer.tick(timedelta(minutes=10))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert is_on(hass, HEATER)
+
+
+async def test_cooldown_holds_a_restart(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """After stopping, a device waits cycle_cooldown before starting again."""
+    await async_setup_thermostat(
+        hass,
+        temperature=21,
+        target_temp=22,
+        cold_tolerance=0.5,
+        hot_tolerance=0.5,
+        cycle_cooldown={"minutes": 10},
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_set_temperature(hass, 23)
+    assert not is_on(hass, HEATER)
+
+    await async_set_temperature(hass, 21)
+    assert not is_on(hass, HEATER)
+
+    freezer.tick(timedelta(minutes=10, seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert is_on(hass, HEATER)
+
+
+async def test_user_actions_bypass_cooldown(hass: HomeAssistant) -> None:
+    """Changing the target starts a resting device straight away."""
+    await async_setup_thermostat(
+        hass,
+        temperature=21,
+        target_temp=22,
+        cold_tolerance=0.5,
+        hot_tolerance=0.5,
+        cycle_cooldown={"minutes": 10},
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_set_temperature(hass, 23)
+    await async_call(hass, "set_temperature", temperature=25)
+    assert is_on(hass, HEATER)
+
+
+async def test_cooldown_doesnt_hold_up_startup(hass: HomeAssistant) -> None:
+    """After a restart, a device that's needed starts without waiting for the cooldown."""
+    await async_setup_restored(
+        hass, "heat", temperature=20, target_temp=22, cycle_cooldown={"minutes": 10}
+    )
+    assert is_on(hass, HEATER)

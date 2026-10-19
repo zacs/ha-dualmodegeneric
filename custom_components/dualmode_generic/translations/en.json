@@ -17,7 +17,7 @@
           "target_sensor": "The current temperature the thermostat acts on.",
           "heater": "Switched on to heat.",
           "cooler": "Switched on to cool.",
-          "fan": "Runs in Fan only mode.",
+          "fan": "Runs in Fan only mode. It can also run alongside the heater or cooler: see the next step.",
           "dryer": "Runs in Dry mode.",
           "target_humidity_sensor": "Optional. Only displayed as the current humidity; it doesn't affect control."
         }
@@ -28,13 +28,17 @@
           "enable_heat_cool": "Heat/cool mode",
           "fan_behavior": "Fan behavior",
           "dryer_behavior": "Dryer behavior",
-          "reverse_cycle": "Reverse-cycle devices"
+          "reverse_cycle": "Reverse-cycle devices",
+          "fan_with": "Run the fan with",
+          "fan_off_delay": "Fan run-on time"
         },
         "data_description": {
           "enable_heat_cool": "Adds a mode that keeps the temperature within a range: heating below it, cooling above it.",
           "fan_behavior": "In Fan only mode, run all the time, or work around the target like a cooler or a heater.",
           "dryer_behavior": "In Dry mode, run all the time, or work around the target like a cooler or a heater.",
-          "reverse_cycle": "Devices that are really one unit switching modes, such as an air conditioner controlled through template switches. When one takes over from another on a mode change, the old one isn't switched off first, so the unit changes mode without powering off."
+          "reverse_cycle": "Devices that are really one unit switching modes, such as an air conditioner controlled through template switches. When one takes over from another on a mode change, the old one isn't switched off first, so the unit changes mode without powering off.",
+          "fan_with": "Adds fan modes to the thermostat. Auto runs the fan whenever these devices run, On runs it all the time, and Off leaves it alone. Fan only mode isn't affected.",
+          "fan_off_delay": "In Auto, how long the fan keeps running after the device stops, for example to blow out the remaining heat."
         }
       },
       "settings": {
@@ -48,6 +52,8 @@
           "min_temp": "Minimum target temperature",
           "max_temp": "Maximum target temperature",
           "min_cycle_duration": "Minimum run time",
+          "max_cycle_duration": "Maximum run time",
+          "cycle_cooldown": "Rest time",
           "keep_alive": "Keep-alive interval",
           "initial_hvac_mode": "Mode on first start",
           "precision": "Precision",
@@ -62,25 +68,148 @@
           "min_temp": "Lowest target you can set. Defaults to 7 °C (45 °F).",
           "max_temp": "Highest target you can set. Defaults to 35 °C (95 °F).",
           "min_cycle_duration": "Once a device switches on or off, how long it stays that way before switching again. Protects compressors.",
+          "max_cycle_duration": "Stop a device once it has run this long, even if it's still needed. It starts again when needed, after the rest time.",
+          "cycle_cooldown": "After a device stops, how long it rests before starting again. Changing the mode, target or preset skips the rest.",
           "keep_alive": "Repeat the current on/off command this often, for devices that can lose state, such as IR or RF.",
           "initial_hvac_mode": "The mode to start in the very first time. After that, the last mode is restored.",
           "precision": "Precision of the displayed temperature.",
           "target_temp_step": "Step for changing the target. Defaults to the precision."
+        },
+        "sections": {
+          "device_tolerances": {
+            "name": "Separate heater and cooler tolerances",
+            "description": "Override the tolerances above for one device. Empty fields use them.",
+            "data": {
+              "heater_cold_tolerance": "Heater cold tolerance",
+              "heater_hot_tolerance": "Heater hot tolerance",
+              "cooler_cold_tolerance": "Cooler cold tolerance",
+              "cooler_hot_tolerance": "Cooler hot tolerance"
+            },
+            "data_description": {
+              "heater_cold_tolerance": "Heating starts this far below its target.",
+              "heater_hot_tolerance": "Heating stops this far above its target. With 0 it stops right at the target.",
+              "cooler_cold_tolerance": "Cooling stops this far below its target. With 0 it stops right at the target.",
+              "cooler_hot_tolerance": "Cooling starts this far above its target."
+            }
+          }
         }
       },
       "presets": {
-        "title": "Away and consent",
+        "title": "Presets",
+        "description": "Each preset you give a temperature is offered on the thermostat. Leaving a preset returns to the targets from before.",
+        "sections": {
+          "away": {
+            "name": "Away",
+            "data": {
+              "away_temp": "Temperature",
+              "away_temp_heater": "For heating",
+              "away_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "away_temp": "Target while the Away preset is on.",
+              "away_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "away_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "comfort": {
+            "name": "Comfort",
+            "data": {
+              "comfort_temp": "Temperature",
+              "comfort_temp_heater": "For heating",
+              "comfort_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "comfort_temp": "Target while the Comfort preset is on.",
+              "comfort_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "comfort_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "eco": {
+            "name": "Eco",
+            "data": {
+              "eco_temp": "Temperature",
+              "eco_temp_heater": "For heating",
+              "eco_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "eco_temp": "Target while the Eco preset is on.",
+              "eco_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "eco_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "home": {
+            "name": "Home",
+            "data": {
+              "home_temp": "Temperature",
+              "home_temp_heater": "For heating",
+              "home_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "home_temp": "Target while the Home preset is on.",
+              "home_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "home_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "sleep": {
+            "name": "Sleep",
+            "data": {
+              "sleep_temp": "Temperature",
+              "sleep_temp_heater": "For heating",
+              "sleep_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "sleep_temp": "Target while the Sleep preset is on.",
+              "sleep_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "sleep_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "activity": {
+            "name": "Activity",
+            "data": {
+              "activity_temp": "Temperature",
+              "activity_temp_heater": "For heating",
+              "activity_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "activity_temp": "Target while the Activity preset is on.",
+              "activity_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "activity_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          }
+        }
+      },
+      "interlocks": {
+        "title": "Interlocks",
+        "description": "Conditions that keep the devices off. The mode is kept, and control resumes once they clear.",
         "data": {
-          "away_temp": "Away temperature",
-          "away_temp_heater": "Away temperature for heating",
-          "away_temp_cooler": "Away temperature for cooling",
-          "consent_entity": "Consent entity"
+          "consent_entity": "Consent entity",
+          "tamper_entity": "Tamper entity"
         },
         "data_description": {
-          "away_temp": "Target while the Away preset is on. Setting any away temperature adds the Away preset.",
-          "away_temp_heater": "Replaces the away temperature in Heat mode, and for the low end of the range in Heat/cool.",
-          "away_temp_cooler": "Replaces the away temperature in Cool mode, and for the high end of the range in Heat/cool.",
-          "consent_entity": "While this entity isn't on (for example a calendar, schedule or input boolean), every device is kept off. The mode is kept."
+          "consent_entity": "While this entity isn't on (for example a calendar, schedule or input boolean), every device is kept off.",
+          "tamper_entity": "While this entity is on (for example a window sensor), every device is kept off. Unlike consent, unavailable doesn't block."
+        },
+        "sections": {
+          "water_guard": {
+            "name": "Water temperature guard",
+            "description": "For hydronic systems. Heating waits until the supply water is hot enough, and cooling until it's cold enough. A running device stops as soon as the water isn't.",
+            "data": {
+              "water_sensor": "Water temperature sensor",
+              "water_setpoint_heat": "Water temperature for heating",
+              "water_setpoint_heat_entity": "Water temperature for heating, from an entity",
+              "water_setpoint_cool": "Water temperature for cooling",
+              "water_setpoint_cool_entity": "Water temperature for cooling, from an entity",
+              "water_tolerance": "Water tolerance"
+            },
+            "data_description": {
+              "water_sensor": "The supply water temperature. Without a reading, nothing is held back.",
+              "water_setpoint_heat": "Heating runs only while the water is at least this, minus the tolerance.",
+              "water_setpoint_heat_entity": "Takes priority over the fixed value.",
+              "water_setpoint_cool": "Cooling runs only while the water is at most this, plus the tolerance.",
+              "water_setpoint_cool_entity": "Takes priority over the fixed value.",
+              "water_tolerance": "Defaults to 0.3."
+            }
+          }
         }
       }
     },
@@ -88,7 +217,10 @@
       "no_devices": "Choose at least one device: a heater, cooler, fan or dryer.",
       "min_max_temp": "The minimum target temperature must be below the maximum.",
       "target_range": "The low target must not be above the high target.",
-      "zero_duration": "Durations must be longer than zero."
+      "zero_duration": "Durations must be longer than zero.",
+      "max_below_min": "The maximum run time must be longer than the minimum run time.",
+      "fan_with_reverse_cycle": "A reverse-cycle fan is the same unit as the heater or cooler, so it can't run alongside them.",
+      "water_needs_sensor": "Choose a water temperature sensor for the water guard."
     }
   },
   "options": {
@@ -99,7 +231,8 @@
           "devices": "Sensor and devices",
           "behavior": "How the devices work",
           "settings": "Temperatures and timing",
-          "presets": "Away and consent"
+          "presets": "Presets",
+          "interlocks": "Interlocks"
         }
       },
       "devices": {
@@ -117,7 +250,7 @@
           "target_sensor": "The current temperature the thermostat acts on.",
           "heater": "Switched on to heat.",
           "cooler": "Switched on to cool.",
-          "fan": "Runs in Fan only mode.",
+          "fan": "Runs in Fan only mode. It can also run alongside the heater or cooler: see the next step.",
           "dryer": "Runs in Dry mode.",
           "target_humidity_sensor": "Optional. Only displayed as the current humidity; it doesn't affect control."
         }
@@ -128,13 +261,17 @@
           "enable_heat_cool": "Heat/cool mode",
           "fan_behavior": "Fan behavior",
           "dryer_behavior": "Dryer behavior",
-          "reverse_cycle": "Reverse-cycle devices"
+          "reverse_cycle": "Reverse-cycle devices",
+          "fan_with": "Run the fan with",
+          "fan_off_delay": "Fan run-on time"
         },
         "data_description": {
           "enable_heat_cool": "Adds a mode that keeps the temperature within a range: heating below it, cooling above it.",
           "fan_behavior": "In Fan only mode, run all the time, or work around the target like a cooler or a heater.",
           "dryer_behavior": "In Dry mode, run all the time, or work around the target like a cooler or a heater.",
-          "reverse_cycle": "Devices that are really one unit switching modes, such as an air conditioner controlled through template switches. When one takes over from another on a mode change, the old one isn't switched off first, so the unit changes mode without powering off."
+          "reverse_cycle": "Devices that are really one unit switching modes, such as an air conditioner controlled through template switches. When one takes over from another on a mode change, the old one isn't switched off first, so the unit changes mode without powering off.",
+          "fan_with": "Adds fan modes to the thermostat. Auto runs the fan whenever these devices run, On runs it all the time, and Off leaves it alone. Fan only mode isn't affected.",
+          "fan_off_delay": "In Auto, how long the fan keeps running after the device stops, for example to blow out the remaining heat."
         }
       },
       "settings": {
@@ -148,6 +285,8 @@
           "min_temp": "Minimum target temperature",
           "max_temp": "Maximum target temperature",
           "min_cycle_duration": "Minimum run time",
+          "max_cycle_duration": "Maximum run time",
+          "cycle_cooldown": "Rest time",
           "keep_alive": "Keep-alive interval",
           "initial_hvac_mode": "Mode on first start",
           "precision": "Precision",
@@ -162,25 +301,148 @@
           "min_temp": "Lowest target you can set. Defaults to 7 °C (45 °F).",
           "max_temp": "Highest target you can set. Defaults to 35 °C (95 °F).",
           "min_cycle_duration": "Once a device switches on or off, how long it stays that way before switching again. Protects compressors.",
+          "max_cycle_duration": "Stop a device once it has run this long, even if it's still needed. It starts again when needed, after the rest time.",
+          "cycle_cooldown": "After a device stops, how long it rests before starting again. Changing the mode, target or preset skips the rest.",
           "keep_alive": "Repeat the current on/off command this often, for devices that can lose state, such as IR or RF.",
           "initial_hvac_mode": "The mode to start in the very first time. After that, the last mode is restored.",
           "precision": "Precision of the displayed temperature.",
           "target_temp_step": "Step for changing the target. Defaults to the precision."
+        },
+        "sections": {
+          "device_tolerances": {
+            "name": "Separate heater and cooler tolerances",
+            "description": "Override the tolerances above for one device. Empty fields use them.",
+            "data": {
+              "heater_cold_tolerance": "Heater cold tolerance",
+              "heater_hot_tolerance": "Heater hot tolerance",
+              "cooler_cold_tolerance": "Cooler cold tolerance",
+              "cooler_hot_tolerance": "Cooler hot tolerance"
+            },
+            "data_description": {
+              "heater_cold_tolerance": "Heating starts this far below its target.",
+              "heater_hot_tolerance": "Heating stops this far above its target. With 0 it stops right at the target.",
+              "cooler_cold_tolerance": "Cooling stops this far below its target. With 0 it stops right at the target.",
+              "cooler_hot_tolerance": "Cooling starts this far above its target."
+            }
+          }
         }
       },
       "presets": {
-        "title": "Away and consent",
+        "title": "Presets",
+        "description": "Each preset you give a temperature is offered on the thermostat. Leaving a preset returns to the targets from before.",
+        "sections": {
+          "away": {
+            "name": "Away",
+            "data": {
+              "away_temp": "Temperature",
+              "away_temp_heater": "For heating",
+              "away_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "away_temp": "Target while the Away preset is on.",
+              "away_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "away_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "comfort": {
+            "name": "Comfort",
+            "data": {
+              "comfort_temp": "Temperature",
+              "comfort_temp_heater": "For heating",
+              "comfort_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "comfort_temp": "Target while the Comfort preset is on.",
+              "comfort_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "comfort_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "eco": {
+            "name": "Eco",
+            "data": {
+              "eco_temp": "Temperature",
+              "eco_temp_heater": "For heating",
+              "eco_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "eco_temp": "Target while the Eco preset is on.",
+              "eco_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "eco_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "home": {
+            "name": "Home",
+            "data": {
+              "home_temp": "Temperature",
+              "home_temp_heater": "For heating",
+              "home_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "home_temp": "Target while the Home preset is on.",
+              "home_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "home_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "sleep": {
+            "name": "Sleep",
+            "data": {
+              "sleep_temp": "Temperature",
+              "sleep_temp_heater": "For heating",
+              "sleep_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "sleep_temp": "Target while the Sleep preset is on.",
+              "sleep_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "sleep_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          },
+          "activity": {
+            "name": "Activity",
+            "data": {
+              "activity_temp": "Temperature",
+              "activity_temp_heater": "For heating",
+              "activity_temp_cooler": "For cooling"
+            },
+            "data_description": {
+              "activity_temp": "Target while the Activity preset is on.",
+              "activity_temp_heater": "Replaces the temperature in Heat mode, and sets the low end of the range in Heat/cool.",
+              "activity_temp_cooler": "Replaces the temperature in Cool mode, and sets the high end of the range in Heat/cool."
+            }
+          }
+        }
+      },
+      "interlocks": {
+        "title": "Interlocks",
+        "description": "Conditions that keep the devices off. The mode is kept, and control resumes once they clear.",
         "data": {
-          "away_temp": "Away temperature",
-          "away_temp_heater": "Away temperature for heating",
-          "away_temp_cooler": "Away temperature for cooling",
-          "consent_entity": "Consent entity"
+          "consent_entity": "Consent entity",
+          "tamper_entity": "Tamper entity"
         },
         "data_description": {
-          "away_temp": "Target while the Away preset is on. Setting any away temperature adds the Away preset.",
-          "away_temp_heater": "Replaces the away temperature in Heat mode, and for the low end of the range in Heat/cool.",
-          "away_temp_cooler": "Replaces the away temperature in Cool mode, and for the high end of the range in Heat/cool.",
-          "consent_entity": "While this entity isn't on (for example a calendar, schedule or input boolean), every device is kept off. The mode is kept."
+          "consent_entity": "While this entity isn't on (for example a calendar, schedule or input boolean), every device is kept off.",
+          "tamper_entity": "While this entity is on (for example a window sensor), every device is kept off. Unlike consent, unavailable doesn't block."
+        },
+        "sections": {
+          "water_guard": {
+            "name": "Water temperature guard",
+            "description": "For hydronic systems. Heating waits until the supply water is hot enough, and cooling until it's cold enough. A running device stops as soon as the water isn't.",
+            "data": {
+              "water_sensor": "Water temperature sensor",
+              "water_setpoint_heat": "Water temperature for heating",
+              "water_setpoint_heat_entity": "Water temperature for heating, from an entity",
+              "water_setpoint_cool": "Water temperature for cooling",
+              "water_setpoint_cool_entity": "Water temperature for cooling, from an entity",
+              "water_tolerance": "Water tolerance"
+            },
+            "data_description": {
+              "water_sensor": "The supply water temperature. Without a reading, nothing is held back.",
+              "water_setpoint_heat": "Heating runs only while the water is at least this, minus the tolerance.",
+              "water_setpoint_heat_entity": "Takes priority over the fixed value.",
+              "water_setpoint_cool": "Cooling runs only while the water is at most this, plus the tolerance.",
+              "water_setpoint_cool_entity": "Takes priority over the fixed value.",
+              "water_tolerance": "Defaults to 0.3."
+            }
+          }
         }
       }
     },
@@ -188,7 +450,10 @@
       "no_devices": "Choose at least one device: a heater, cooler, fan or dryer.",
       "min_max_temp": "The minimum target temperature must be below the maximum.",
       "target_range": "The low target must not be above the high target.",
-      "zero_duration": "Durations must be longer than zero."
+      "zero_duration": "Durations must be longer than zero.",
+      "max_below_min": "The maximum run time must be longer than the minimum run time.",
+      "fan_with_reverse_cycle": "A reverse-cycle fan is the same unit as the heater or cooler, so it can't run alongside them.",
+      "water_needs_sensor": "Choose a water temperature sensor for the water guard."
     }
   },
   "selector": {

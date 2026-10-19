@@ -16,11 +16,14 @@ from datetime import datetime, timedelta
 from typing import Any, Self
 
 from homeassistant.components.climate import (
+    ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
     ATTR_PRESET_MODE,
     ATTR_TARGET_TEMP_HIGH,
     ATTR_TARGET_TEMP_LOW,
-    PRESET_AWAY,
+    FAN_AUTO,
+    FAN_OFF,
+    FAN_ON,
     PRESET_NONE,
     ClimateEntity,
     ClimateEntityFeature,
@@ -197,9 +200,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             or (mode is not HVACMode.HEAT_COOL and MODE_ROLES[mode][0] in self._devices)
         ]
 
-        self._presets: dict[str, PresetTemperatures] = {}
-        if config.away.configured:
-            self._presets[PRESET_AWAY] = config.away
+        self._presets: dict[str, PresetTemperatures] = dict(config.presets)
 
         features = (
             ClimateEntityFeature.TARGET_TEMPERATURE
@@ -211,6 +212,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         if self._presets:
             features |= ClimateEntityFeature.PRESET_MODE
             self._attr_preset_modes = [PRESET_NONE, *self._presets]
+        if config.fan_with:
+            features |= ClimateEntityFeature.FAN_MODE
+            self._attr_fan_modes = [FAN_AUTO, FAN_ON, FAN_OFF]
         self._attr_supported_features = features
 
         self._hvac_mode = HVACMode.OFF
@@ -223,12 +227,24 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._cur_temp: float | None = None
         self._cur_humidity: float | None = None
         self._consent = config.consent_entity is None
+        self._tampered = False
+        self._water_temp: float | None = None
+        # Last value of each water setpoint entity.
+        self._water_setpoints: dict[str, float] = {}
+        self._fan_mode = FAN_AUTO
+        # Whether the fan was last running alongside a device in auto, and how
+        # long it keeps running after that device stopped (fan_off_delay).
+        self._fan_following = False
+        self._fan_hold_until: datetime | None = None
 
         self._lock = asyncio.Lock()
         self._started = False
         self._owners: dict[str, Role] = {}
         self._pending: dict[str, tuple[bool, datetime]] = {}
         self._last_toggled: dict[str, datetime] = {}
+        # When each device last stopped running; cycle_cooldown counts from it,
+        # so (as in the built-in thermostat) it doesn't hold up a restart.
+        self._stopped: dict[str, datetime] = {}
         # Devices a mode change or lack of consent turned off (or tried to) that
         # haven't reported off yet; turned off whenever they show up on.
         self._off_owed: set[str] = set()
@@ -262,11 +278,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                     self.hass, [config.humidity_sensor], self._async_humidity_changed
                 )
             )
-        if config.consent_entity:
+        if gate := [e for e in (config.consent_entity, config.tamper_entity) if e]:
             self.async_on_remove(
-                async_track_state_change_event(
-                    self.hass, [config.consent_entity], self._async_consent_changed
-                )
+                async_track_state_change_event(self.hass, gate, self._async_gate_changed)
+            )
+        if water := self._water_entities():
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, water, self._async_water_changed)
             )
         self.async_on_remove(
             async_track_state_change_event(
@@ -298,14 +316,16 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             and _is_known(state)
         ):
             self._async_update_humidity(state)
-        if config.consent_entity:
-            self._consent = _consent_from(self.hass.states.get(config.consent_entity))
+        self._read_gate()
+        for entity_id in self._water_entities():
+            if (state := self.hass.states.get(entity_id)) and _is_known(state):
+                self._async_update_water(state)
         for entity_id in self._entity_roles:
             if state := self.hass.states.get(entity_id):
                 self._last_toggled[entity_id] = state.last_changed
         self._started = True
         # Without consent everything starts off, whatever the mode (as in 0.2.x).
-        await self._async_control(gate_changed=not self._consent)
+        await self._async_control(gate_changed=not self._gate_open)
         self.async_write_ha_state()
 
     async def _async_restore(self) -> None:
@@ -339,6 +359,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             preset = old_state.attributes.get(ATTR_PRESET_MODE)
             if preset in self._presets:
                 self._preset = preset
+            fan_mode = old_state.attributes.get(ATTR_FAN_MODE)
+            if self._config.fan_with and fan_mode in self._attr_fan_modes:
+                self._fan_mode = fan_mode
 
         if self._hvac_mode is not HVACMode.OFF:
             self._last_active_mode = self._hvac_mode
@@ -394,11 +417,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         """Return what the thermostat's devices are actually doing."""
         if self._hvac_mode is HVACMode.OFF:
             return HVACAction.OFF
-        if not self._consent:
+        if not self._gate_open:
             return HVACAction.IDLE
         for role in MODE_ROLES[self._hvac_mode]:
             if role in self._devices and self._role_running(role, actual=True):
                 return ROLE_ACTION[role]
+        if self._fan_managed() and self._entity_on(self._devices[Role.FAN], actual=True):
+            return HVACAction.FAN
         return HVACAction.IDLE
 
     @property
@@ -435,6 +460,24 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
     def preset_mode(self) -> str | None:
         """Return the current preset."""
         return self._preset if self._presets else None
+
+    @property
+    def fan_mode(self) -> str | None:
+        """Return the fan mode, when the fan can run alongside other devices."""
+        return self._fan_mode if self._config.fan_with else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the water guard's readings, when it's configured."""
+        if self._config.water is None:
+            return None
+        heat, cool = self._water_setpoints_now()
+        return {
+            "water_temperature": self._water_temp,
+            "water_setpoint_heat": heat,
+            "water_setpoint_cool": cool,
+            "water_guard_active": self._water_guard_active(),
+        }
 
     @property
     def min_temp(self) -> float:
@@ -583,6 +626,15 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         await self._async_control(force=True)
         self.async_write_ha_state()
 
+    async def async_set_fan_mode(self, fan_mode: str) -> None:
+        """Choose whether the fan runs alongside the heater or cooler."""
+        was_managed = self._fan_managed()
+        self._fan_mode = fan_mode
+        await self._async_control(
+            fan_changed=True, fan_released=was_managed and not self._fan_managed()
+        )
+        self.async_write_ha_state()
+
     async def async_turn_on(self) -> None:
         """Return to the last active mode."""
         if self._hvac_mode is not HVACMode.OFF:
@@ -619,16 +671,26 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._async_update_humidity(new_state)
         self.async_write_ha_state()
 
-    async def _async_consent_changed(self, event: Event[EventStateChangedData]) -> None:
-        granted = _consent_from(event.data["new_state"])
-        if granted == self._consent:
+    async def _async_gate_changed(self, event: Event[EventStateChangedData]) -> None:
+        was_open = self._gate_open
+        self._read_gate()
+        if self._gate_open == was_open:
             return
-        self._consent = granted
         if self._started:
             self.async_set_context(event.context)
-            # Revoking stops every device at once, in any mode; granting acts
+            # Closing stops every device at once, in any mode; opening acts
             # right away.
             await self._async_control(force=True, gate_changed=True)
+        self.async_write_ha_state()
+
+    async def _async_water_changed(self, event: Event[EventStateChangedData]) -> None:
+        new_state = event.data["new_state"]
+        if new_state is None or not _is_known(new_state):
+            return  # keep the last reading, like the temperature sensor
+        self._async_update_water(new_state)
+        if self._started:
+            self.async_set_context(event.context)
+            await self._async_control()
         self.async_write_ha_state()
 
     @callback
@@ -655,6 +717,11 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if new_state.state == STATE_OFF:
                 self._owners.pop(entity_id, None)
                 self._off_owed.discard(entity_id)
+                if old_state is not None and old_state.state == STATE_ON:
+                    self._stopped[entity_id] = new_state.last_changed
+            elif new_state.state == STATE_ON and (max_cycle := self._config.max_cycle_duration):
+                # Check back when it's due to stop.
+                self._schedule_recheck(new_state.last_changed + max_cycle - dt_util.utcnow())
         # A device that (re)appears gets the thermostat's current decision, and
         # one that should be off but shows up on is turned off.
         came_back = (old_state is None or not _is_known(old_state)) and new_state.state in (
@@ -662,8 +729,17 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             STATE_OFF,
         )
         owed_off = changed and entity_id in self._off_owed and new_state.state == STATE_ON
+        # In auto, the fan follows a device someone else switched straight away.
+        follow = (
+            changed
+            and self._fan_mode == FAN_AUTO
+            and self._fan_managed()
+            and not self._config.fan_with.isdisjoint(self._entity_roles[entity_id])
+        )
         if (came_back or owed_off) and self._started:
             self.hass.async_create_task(self._async_control_and_write(), eager_start=True)
+        elif follow and self._started:
+            self.hass.async_create_task(self._async_follow_fan(), eager_start=True)
         self.async_write_ha_state()
 
     async def _async_keep_alive(self, _now: datetime) -> None:
@@ -699,6 +775,22 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         except ValueError as ex:
             _LOGGER.error("Unable to update from humidity sensor: %s", ex)
 
+    @callback
+    def _async_update_water(self, state: State) -> None:
+        try:
+            value = float(state.state)
+            if not math.isfinite(value):
+                raise ValueError(f"illegal state {state.state}")
+        except ValueError as ex:
+            _LOGGER.error("Unable to update from %s: %s", state.entity_id, ex)
+            return
+        water = self._config.water
+        assert water is not None
+        if state.entity_id == water.sensor:
+            self._water_temp = value
+        if state.entity_id in (water.heat_entity, water.cool_entity):
+            self._water_setpoints[state.entity_id] = value
+
     # ------------------------------------------------------------------
     # Control
     # ------------------------------------------------------------------
@@ -710,24 +802,33 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         keepalive: bool = False,
         leaving: HVACMode | None = None,
         gate_changed: bool = False,
+        fan_changed: bool = False,
+        fan_released: bool = False,
     ) -> None:
         """Bring the devices in line with the mode and temperatures.
 
-        ``force`` skips min_cycle_duration and compares with the devices' real
-        state (user actions). ``keepalive`` repeats commands for the mode's
-        devices. ``leaving`` is the previous mode when the mode just changed:
-        devices outside the new mode are then turned off. Otherwise only the
-        current mode's devices are touched, so a fan switched on by hand for
-        circulation is left alone; in off mode nothing is touched except to
-        finish switching devices off. ``gate_changed`` marks a consent change.
+        ``force`` skips min_cycle_duration and cycle_cooldown and compares with
+        the devices' real state (user actions). ``keepalive`` repeats commands
+        for the mode's devices. ``leaving`` is the previous mode when the mode
+        just changed: devices outside the new mode are then turned off.
+        Otherwise only the current mode's devices are touched, so a fan
+        switched on by hand for circulation is left alone; in off mode nothing
+        is touched except to finish switching devices off. ``gate_changed``
+        marks a consent or tamper change. ``fan_changed`` marks a fan mode
+        change, acted on like a user action for the fan only; ``fan_released``
+        turns off a fan that its fan mode no longer runs.
         """
         async with self._lock:
             mode = self._hvac_mode
+            now = dt_util.utcnow()
             switching = leaving is not None
             replaceable: frozenset[Role] = frozenset()
             desired: dict[Role, bool] = {}
             all_off = False
-            if not self._consent and (mode is not HVACMode.OFF or switching or gate_changed):
+            # Turned off without waiting for min_cycle_duration.
+            urgent: set[str] = set()
+            gate_open = self._gate_open
+            if not gate_open and (mode is not HVACMode.OFF or switching or gate_changed):
                 # No consent: everything off, whatever the mode (as in 0.2.x).
                 desired = dict.fromkeys(self._devices, False)
                 force = switching = all_off = True
@@ -745,7 +846,16 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                     if mode is not HVACMode.OFF:
                         replaceable = self._config.reverse_cycle
                 if mode is not HVACMode.OFF:
-                    desired.update(decide(self._snapshot()))
+                    snapshot = self._snapshot()
+                    decided = decide(snapshot)
+                    # The water guard stops a device straight away, like consent.
+                    urgent = {self._devices[role] for role in snapshot.blocked}
+                    for entity_id in self._past_max_cycle(decided, now):
+                        for role in self._entity_roles[entity_id]:
+                            if role in decided:
+                                decided[role] = False
+                        urgent.add(entity_id)
+                    desired.update(decided)
             await self._async_apply(
                 desired,
                 force=force,
@@ -753,7 +863,88 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 owe_offs=switching,
                 all_off=all_off,
                 replaceable=replaceable,
+                urgent=urgent,
             )
+            # After the other devices, so the fan follows what they really do.
+            if all_off or not gate_open:
+                return
+            if fan_released:
+                await self._async_apply(
+                    {Role.FAN: False},
+                    force=True,
+                    keepalive=False,
+                    owe_offs=False,
+                    all_off=False,
+                    replaceable=frozenset(),
+                )
+            elif self._fan_managed(mode):
+                await self._async_apply_fan(
+                    mode, now, force=force or fan_changed, keepalive=keepalive
+                )
+
+    async def _async_follow_fan(self) -> None:
+        """Update the fan after a device it follows was switched by someone else."""
+        async with self._lock:
+            mode = self._hvac_mode
+            if self._gate_open and self._fan_managed(mode):
+                await self._async_apply_fan(mode, dt_util.utcnow(), force=False, keepalive=False)
+        self.async_write_ha_state()
+
+    async def _async_apply_fan(
+        self, mode: HVACMode, now: datetime, *, force: bool, keepalive: bool
+    ) -> None:
+        # max_cycle_duration and cycle_cooldown are for the mode's own devices;
+        # a fan running alongside them only follows.
+        await self._async_apply(
+            {Role.FAN: self._fan_wanted(mode, now)},
+            force=force,
+            keepalive=keepalive,
+            owe_offs=False,
+            all_off=False,
+            replaceable=frozenset(),
+            cycle_limits=False,
+        )
+
+    def _fan_wanted(self, mode: HVACMode, now: datetime) -> bool:
+        """Return whether the fan mode wants the fan on."""
+        if self._fan_mode == FAN_ON:
+            return True
+        if any(self._role_running(role) for role in self._fan_followed(mode)):
+            self._fan_following = True
+            self._fan_hold_until = None
+            return True
+        if self._fan_following and self._config.fan_off_delay:
+            self._fan_hold_until = now + self._config.fan_off_delay
+        self._fan_following = False
+        if self._fan_hold_until is not None:
+            if (remaining := self._fan_hold_until - now) > timedelta(0):
+                self._schedule_recheck(remaining)
+                return True
+            self._fan_hold_until = None
+        return False
+
+    def _past_max_cycle(self, decided: Mapping[Role, bool], now: datetime) -> set[str]:
+        """Return devices that have run for max_cycle_duration and must stop."""
+        if not (max_cycle := self._config.max_cycle_duration):
+            return set()
+        expired = set()
+        for role, on in decided.items():
+            entity_id = self._devices[role]
+            if not on or not self._entity_on(entity_id, actual=True) or entity_id in self._replaced:
+                continue
+            if (since := self._last_toggled.get(entity_id)) is None:
+                continue
+            if (remaining := since + max_cycle - now) > timedelta(0):
+                self._schedule_recheck(remaining)
+            else:
+                _LOGGER.debug(
+                    "%s: %s has run for max_cycle_duration (%s)",
+                    self.entity_id,
+                    entity_id,
+                    max_cycle,
+                )
+                expired.add(entity_id)
+        return expired
 
     def _snapshot(self) -> Snapshot:
         mode = self._hvac_mode
@@ -774,6 +965,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 for role in MODE_ROLES[mode]
                 if role in self._devices and self._role_running(role)
             ),
+            role_tolerances=self._config.role_tolerances,
+            blocked=self._water_blocked(mode),
         )
 
     async def _async_apply(
@@ -785,11 +978,15 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         owe_offs: bool,
         all_off: bool,
         replaceable: frozenset[Role],
+        urgent: set[str] | None = None,
+        cycle_limits: bool = True,
     ) -> None:
         """Send only the commands needed to reach the desired device states.
 
         ``all_off`` marks passes that switch everything off (off mode, no
         consent); devices that handed over are switched off then too.
+        ``urgent`` devices are switched off without waiting for
+        min_cycle_duration. ``cycle_limits`` applies cycle_cooldown.
         """
         now = dt_util.utcnow()
         mode_entities = self._mode_entities()
@@ -842,10 +1039,17 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 if keepalive and entity_id in mode_entities:
                     resend.append((entity_id, on))
                 continue
-            bypass = force or entity_id in self._off_owed or self._requested.get(entity_id) is on
-            if not bypass and (wait := self._cycle_remaining(entity_id, now)) is not None:
+            bypass = (
+                force
+                or entity_id in self._off_owed
+                or self._requested.get(entity_id) is on
+                or (not on and urgent is not None and entity_id in urgent)
+            )
+            if not bypass and (
+                wait := self._cycle_remaining(entity_id, now, starting=on, cooldown=cycle_limits)
+            ):
                 _LOGGER.debug(
-                    "%s: min_cycle_duration keeps %s %s for %s more",
+                    "%s: min_cycle_duration or cycle_cooldown keeps %s %s for %s more",
                     self.entity_id,
                     entity_id,
                     "off" if on else "on",
@@ -959,21 +1163,117 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         return None
 
     def _mode_entities(self) -> set[str]:
-        """Return the entities the current mode controls."""
-        return {
+        """Return the entities the current mode controls, with a fan its fan mode runs."""
+        entities = {
             self._devices[role] for role in MODE_ROLES[self._hvac_mode] if role in self._devices
         }
+        if self._fan_managed():
+            entities.add(self._devices[Role.FAN])
+        return entities
+
+    def _fan_followed(self, mode: HVACMode) -> list[Role]:
+        """Return the devices of a mode that the fan runs alongside in auto."""
+        return [
+            role
+            for role in MODE_ROLES[mode]
+            if role in self._config.fan_with and role in self._devices
+        ]
+
+    def _fan_managed(self, mode: HVACMode | None = None) -> bool:
+        """Return whether the fan mode controls the fan in a mode.
+
+        Fan only mode runs the fan as its own device; off runs nothing. In
+        auto, a mode without a device to follow leaves the fan alone.
+        """
+        mode = self._hvac_mode if mode is None else mode
+        if not self._config.fan_with or mode in (HVACMode.OFF, HVACMode.FAN_ONLY):
+            return False
+        if self._fan_mode == FAN_ON:
+            return True
+        return self._fan_mode == FAN_AUTO and bool(self._fan_followed(mode))
+
+    @property
+    def _gate_open(self) -> bool:
+        """Return whether consent and the tamper entity let devices run."""
+        return self._consent and not self._tampered
+
+    @callback
+    def _read_gate(self) -> None:
+        config = self._config
+        if config.consent_entity:
+            self._consent = _consent_from(self.hass.states.get(config.consent_entity))
+        if config.tamper_entity:
+            self._tampered = _tampered_from(self.hass.states.get(config.tamper_entity))
+
+    def _water_entities(self) -> list[str]:
+        water = self._config.water
+        if water is None:
+            return []
+        return [e for e in (water.sensor, water.heat_entity, water.cool_entity) if e]
+
+    def _water_setpoints_now(self) -> tuple[float | None, float | None]:
+        """Return the water setpoints for heating and cooling in effect."""
+        water = self._config.water
+        if water is None:
+            return None, None
+        heat = self._water_setpoints.get(water.heat_entity or "", water.heat)
+        cool = self._water_setpoints.get(water.cool_entity or "", water.cool)
+        return heat, cool
+
+    def _water_guarded(self, mode: HVACMode) -> dict[Role, Demand]:
+        """Return the mode's devices that heat or cool, which the guard applies to."""
+        guarded = {}
+        for role in MODE_ROLES[mode]:
+            demand = role_demand(role, self._config.fan_behavior, self._config.dryer_behavior)
+            if role in self._devices and demand is not Demand.ALWAYS:
+                guarded[role] = demand
+        return guarded
+
+    def _water_blocked(self, mode: HVACMode) -> frozenset[Role]:
+        """Return the devices the water isn't hot or cold enough for.
+
+        Without a water reading or a setpoint, nothing is held back.
+        """
+        water = self._config.water
+        if water is None or (temp := self._water_temp) is None:
+            return frozenset()
+        heat, cool = self._water_setpoints_now()
+        return frozenset(
+            role
+            for role, demand in self._water_guarded(mode).items()
+            if (demand is Demand.HEATING and heat is not None and temp < heat - water.tolerance)
+            or (demand is Demand.COOLING and cool is not None and temp > cool + water.tolerance)
+        )
+
+    def _water_guard_active(self) -> bool:
+        """Return whether the guard is holding back every device the mode heats or cools with."""
+        guarded = self._water_guarded(self._hvac_mode)
+        return bool(guarded) and self._water_blocked(self._hvac_mode) == set(guarded)
 
     def _entity_available(self, entity_id: str) -> bool:
         state = self.hass.states.get(entity_id)
         return state is not None and state.state != STATE_UNAVAILABLE
 
-    def _cycle_remaining(self, entity_id: str, now: datetime) -> timedelta | None:
-        if not (min_cycle := self._config.min_cycle_duration):
-            return None
-        if (last := self._last_toggled.get(entity_id)) is None:
-            return None
-        remaining = last + min_cycle - now
+    def _cycle_remaining(
+        self, entity_id: str, now: datetime, *, starting: bool, cooldown: bool
+    ) -> timedelta | None:
+        """Return how long a device has to wait before switching, if at all.
+
+        min_cycle_duration holds both ways; cycle_cooldown only holds a start.
+        """
+        waits = []
+        if (min_cycle := self._config.min_cycle_duration) and (
+            last := self._last_toggled.get(entity_id)
+        ):
+            waits.append(last + min_cycle - now)
+        if (
+            starting
+            and cooldown
+            and (rest := self._config.cycle_cooldown)
+            and (stopped := self._stopped.get(entity_id))
+        ):
+            waits.append(stopped + rest - now)
+        remaining = max(waits, default=timedelta(0))
         return remaining if remaining > timedelta(0) else None
 
     @callback
@@ -1047,4 +1347,9 @@ def _is_known(state: State) -> bool:
 
 def _consent_from(state: State | None) -> bool:
     """Consent is granted only while the entity is on."""
+    return state is not None and state.state == STATE_ON
+
+
+def _tampered_from(state: State | None) -> bool:
+    """The tamper entity holds devices off only while it's on, not while unavailable."""
     return state is not None and state.state == STATE_ON
