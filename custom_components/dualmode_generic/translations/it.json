@@ -1,0 +1,503 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Crea un termostato multimodale",
+        "description": "Ogni dispositivo aggiunge una modalità: il riscaldamento aggiunge Caldo, il raffrescamento Freddo, il ventilatore Solo ventilatore e il deumidificatore Deumidificazione. Con riscaldamento e raffrescamento è disponibile anche Caldo/Freddo. I dispositivi possono essere switch, input boolean, ventilatori, luci, gruppi o deumidificatori.",
+        "data": {
+          "name": "Nome",
+          "target_sensor": "Sensore di temperatura",
+          "heater": "Riscaldamento",
+          "cooler": "Raffrescamento",
+          "fan": "Ventilatore",
+          "dryer": "Deumidificatore",
+          "target_humidity_sensor": "Sensore di umidità"
+        },
+        "data_description": {
+          "target_sensor": "La temperatura attuale su cui agisce il termostato.",
+          "heater": "Acceso per riscaldare.",
+          "cooler": "Acceso per raffrescare.",
+          "fan": "Funziona in modalità Solo ventilatore. Può anche funzionare insieme al riscaldamento o al raffrescamento: vedi il passaggio successivo.",
+          "dryer": "Funziona in modalità Deumidificazione.",
+          "target_humidity_sensor": "Facoltativo. Viene solo mostrato come umidità attuale; non influisce sul controllo."
+        }
+      },
+      "behavior": {
+        "title": "Come funzionano i dispositivi",
+        "data": {
+          "enable_heat_cool": "Modalità Caldo/Freddo",
+          "fan_behavior": "Comportamento ventilatore",
+          "dryer_behavior": "Comportamento deumidificatore",
+          "reverse_cycle": "Dispositivi a ciclo inverso",
+          "fan_with": "Ventilatore insieme a",
+          "fan_off_delay": "Post-ventilazione"
+        },
+        "data_description": {
+          "enable_heat_cool": "Aggiunge una modalità che mantiene la temperatura in un intervallo: riscalda sotto, raffresca sopra.",
+          "fan_behavior": "In modalità Solo ventilatore, funziona sempre oppure lavora attorno al target come un raffrescamento o un riscaldamento.",
+          "dryer_behavior": "In modalità Deumidificazione, funziona sempre oppure lavora attorno al target come un raffrescamento o un riscaldamento.",
+          "reverse_cycle": "Dispositivi che sono in realtà un'unica unità che cambia modalità, come un condizionatore comandato tramite switch template. Quando uno subentra a un altro durante un cambio di modalità, il precedente non viene spento prima, così l'unità cambia modalità senza spegnersi.",
+          "fan_with": "Aggiunge le modalità del ventilatore al termostato. Automatico fa funzionare il ventilatore quando funzionano questi dispositivi, Acceso lo fa funzionare sempre e Spento lo lascia com'è. La modalità Solo ventilatore non cambia.",
+          "fan_off_delay": "In Automatico, per quanto tempo il ventilatore continua a funzionare dopo che il dispositivo si ferma, ad esempio per smaltire il calore residuo."
+        }
+      },
+      "settings": {
+        "title": "Temperature e tempi",
+        "data": {
+          "cold_tolerance": "Tolleranza freddo",
+          "hot_tolerance": "Tolleranza caldo",
+          "target_temp": "Temperatura target iniziale",
+          "target_temp_low": "Target inferiore iniziale",
+          "target_temp_high": "Target superiore iniziale",
+          "min_temp": "Temperatura target minima",
+          "max_temp": "Temperatura target massima",
+          "min_cycle_duration": "Durata minima del ciclo",
+          "max_cycle_duration": "Durata massima del ciclo",
+          "cycle_cooldown": "Tempo di riposo",
+          "keep_alive": "Intervallo keep-alive",
+          "initial_hvac_mode": "Modalità al primo avvio",
+          "precision": "Precisione",
+          "target_temp_step": "Passo del target"
+        },
+        "data_description": {
+          "cold_tolerance": "Di quanto la temperatura deve scendere sotto il target prima che parta il riscaldamento e prima che si fermi il raffrescamento. Con target 22 e 0,5, il riscaldamento parte a 21,5.",
+          "hot_tolerance": "Di quanto la temperatura deve salire sopra il target prima che parta il raffrescamento e prima che si fermi il riscaldamento. Con target 22 e 0,5, il riscaldamento si ferma a 22,5.",
+          "target_temp": "Usata finché non imposti un target sul termostato.",
+          "target_temp_low": "Intervallo Caldo/Freddo usato finché non ne imposti uno sul termostato.",
+          "target_temp_high": "Intervallo Caldo/Freddo usato finché non ne imposti uno sul termostato.",
+          "min_temp": "Il target più basso che puoi impostare. Predefinita: 7 °C (45 °F).",
+          "max_temp": "Il target più alto che puoi impostare. Predefinita: 35 °C (95 °F).",
+          "min_cycle_duration": "Quando un dispositivo si accende o si spegne, per quanto tempo resta così prima di cambiare di nuovo. Protegge i compressori.",
+          "max_cycle_duration": "Ferma un dispositivo dopo che ha funzionato così a lungo, anche se serve ancora. Riparte quando serve, dopo il tempo di riposo.",
+          "cycle_cooldown": "Dopo che un dispositivo si ferma, per quanto tempo resta fermo prima di ripartire. Cambiare modalità, target o preset salta il riposo.",
+          "keep_alive": "Ripete il comando acceso/spento attuale con questa frequenza, per dispositivi che possono perdere lo stato, come IR o RF.",
+          "initial_hvac_mode": "La modalità con cui partire la prima volta. In seguito viene ripristinata l'ultima modalità.",
+          "precision": "Precisione della temperatura mostrata.",
+          "target_temp_step": "Passo per modificare il target. Predefinito: la precisione."
+        },
+        "sections": {
+          "device_tolerances": {
+            "name": "Tolleranze separate per riscaldamento e raffrescamento",
+            "description": "Sostituiscono le tolleranze qui sopra per un solo dispositivo. I campi vuoti usano quelle.",
+            "data": {
+              "heater_cold_tolerance": "Tolleranza freddo del riscaldamento",
+              "heater_hot_tolerance": "Tolleranza caldo del riscaldamento",
+              "cooler_cold_tolerance": "Tolleranza freddo del raffrescamento",
+              "cooler_hot_tolerance": "Tolleranza caldo del raffrescamento"
+            },
+            "data_description": {
+              "heater_cold_tolerance": "Il riscaldamento parte quando la temperatura è di tanto sotto il suo target.",
+              "heater_hot_tolerance": "Il riscaldamento si ferma quando la temperatura è di tanto sopra il suo target. Con 0 si ferma esattamente al target.",
+              "cooler_cold_tolerance": "Il raffrescamento si ferma quando la temperatura è di tanto sotto il suo target. Con 0 si ferma esattamente al target.",
+              "cooler_hot_tolerance": "Il raffrescamento parte quando la temperatura è di tanto sopra il suo target."
+            }
+          }
+        }
+      },
+      "presets": {
+        "title": "Preset",
+        "description": "Ogni preset a cui assegni una temperatura viene offerto sul termostato. Uscendo da un preset si torna ai target di prima.",
+        "sections": {
+          "away": {
+            "name": "Fuori casa",
+            "data": {
+              "away_temp": "Temperatura",
+              "away_temp_heater": "Per il riscaldamento",
+              "away_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "away_temp": "Target mentre il preset Fuori casa è attivo.",
+              "away_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "away_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "comfort": {
+            "name": "Comfort",
+            "data": {
+              "comfort_temp": "Temperatura",
+              "comfort_temp_heater": "Per il riscaldamento",
+              "comfort_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "comfort_temp": "Target mentre il preset Comfort è attivo.",
+              "comfort_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "comfort_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "eco": {
+            "name": "Eco",
+            "data": {
+              "eco_temp": "Temperatura",
+              "eco_temp_heater": "Per il riscaldamento",
+              "eco_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "eco_temp": "Target mentre il preset Eco è attivo.",
+              "eco_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "eco_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "home": {
+            "name": "In casa",
+            "data": {
+              "home_temp": "Temperatura",
+              "home_temp_heater": "Per il riscaldamento",
+              "home_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "home_temp": "Target mentre il preset In casa è attivo.",
+              "home_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "home_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "sleep": {
+            "name": "Notte",
+            "data": {
+              "sleep_temp": "Temperatura",
+              "sleep_temp_heater": "Per il riscaldamento",
+              "sleep_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "sleep_temp": "Target mentre il preset Notte è attivo.",
+              "sleep_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "sleep_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "activity": {
+            "name": "Attività",
+            "data": {
+              "activity_temp": "Temperatura",
+              "activity_temp_heater": "Per il riscaldamento",
+              "activity_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "activity_temp": "Target mentre il preset Attività è attivo.",
+              "activity_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "activity_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          }
+        }
+      },
+      "interlocks": {
+        "title": "Interblocchi",
+        "description": "Condizioni che mantengono spenti i dispositivi. La modalità viene mantenuta e il controllo riprende quando cessano.",
+        "data": {
+          "consent_entity": "Entità di consenso",
+          "tamper_entity": "Entità tamper"
+        },
+        "data_description": {
+          "consent_entity": "Finché questa entità non è accesa (ad esempio un calendario, una pianificazione o un input boolean), tutti i dispositivi restano spenti.",
+          "tamper_entity": "Finché questa entità è accesa (ad esempio un sensore finestra), tutti i dispositivi restano spenti. A differenza del consenso, se non è disponibile non blocca nulla."
+        },
+        "sections": {
+          "water_guard": {
+            "name": "Guardia temperatura acqua",
+            "description": "Per impianti idronici. Il riscaldamento attende che l'acqua di mandata sia abbastanza calda e il raffrescamento che sia abbastanza fredda. Un dispositivo in funzione si ferma appena l'acqua non lo è più.",
+            "data": {
+              "water_sensor": "Sensore temperatura acqua",
+              "water_setpoint_heat": "Setpoint acqua riscaldamento",
+              "water_setpoint_heat_entity": "Setpoint acqua riscaldamento, da un'entità",
+              "water_setpoint_cool": "Setpoint acqua raffrescamento",
+              "water_setpoint_cool_entity": "Setpoint acqua raffrescamento, da un'entità",
+              "water_tolerance": "Tolleranza temperatura acqua"
+            },
+            "data_description": {
+              "water_sensor": "La temperatura dell'acqua di mandata. Senza una lettura, nulla viene bloccato.",
+              "water_setpoint_heat": "Il riscaldamento funziona solo mentre l'acqua è almeno a questo valore, meno la tolleranza.",
+              "water_setpoint_heat_entity": "Ha la precedenza sul valore fisso.",
+              "water_setpoint_cool": "Il raffrescamento funziona solo mentre l'acqua è al massimo a questo valore, più la tolleranza.",
+              "water_setpoint_cool_entity": "Ha la precedenza sul valore fisso.",
+              "water_tolerance": "Predefinita: 0,3."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "no_devices": "Scegli almeno un dispositivo: riscaldamento, raffrescamento, ventilatore o deumidificatore.",
+      "min_max_temp": "La temperatura target minima deve essere inferiore alla massima.",
+      "target_range": "Il target inferiore non deve superare quello superiore.",
+      "zero_duration": "Le durate devono essere maggiori di zero.",
+      "max_below_min": "La durata massima del ciclo deve superare quella minima.",
+      "fan_with_reverse_cycle": "Un ventilatore a ciclo inverso è la stessa unità del riscaldamento o del raffrescamento, quindi non può funzionare insieme a loro.",
+      "water_needs_sensor": "Scegli un sensore di temperatura dell'acqua per la guardia."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni del termostato",
+        "menu_options": {
+          "devices": "Sensore e dispositivi",
+          "behavior": "Come funzionano i dispositivi",
+          "settings": "Temperature e tempi",
+          "presets": "Preset",
+          "interlocks": "Interblocchi"
+        }
+      },
+      "devices": {
+        "title": "Sensore e dispositivi",
+        "description": "Ogni dispositivo aggiunge una modalità: il riscaldamento aggiunge Caldo, il raffrescamento Freddo, il ventilatore Solo ventilatore e il deumidificatore Deumidificazione. Con riscaldamento e raffrescamento è disponibile anche Caldo/Freddo. I dispositivi possono essere switch, input boolean, ventilatori, luci, gruppi o deumidificatori.",
+        "data": {
+          "target_sensor": "Sensore di temperatura",
+          "heater": "Riscaldamento",
+          "cooler": "Raffrescamento",
+          "fan": "Ventilatore",
+          "dryer": "Deumidificatore",
+          "target_humidity_sensor": "Sensore di umidità"
+        },
+        "data_description": {
+          "target_sensor": "La temperatura attuale su cui agisce il termostato.",
+          "heater": "Acceso per riscaldare.",
+          "cooler": "Acceso per raffrescare.",
+          "fan": "Funziona in modalità Solo ventilatore. Può anche funzionare insieme al riscaldamento o al raffrescamento: vedi il passaggio successivo.",
+          "dryer": "Funziona in modalità Deumidificazione.",
+          "target_humidity_sensor": "Facoltativo. Viene solo mostrato come umidità attuale; non influisce sul controllo."
+        }
+      },
+      "behavior": {
+        "title": "Come funzionano i dispositivi",
+        "data": {
+          "enable_heat_cool": "Modalità Caldo/Freddo",
+          "fan_behavior": "Comportamento ventilatore",
+          "dryer_behavior": "Comportamento deumidificatore",
+          "reverse_cycle": "Dispositivi a ciclo inverso",
+          "fan_with": "Ventilatore insieme a",
+          "fan_off_delay": "Post-ventilazione"
+        },
+        "data_description": {
+          "enable_heat_cool": "Aggiunge una modalità che mantiene la temperatura in un intervallo: riscalda sotto, raffresca sopra.",
+          "fan_behavior": "In modalità Solo ventilatore, funziona sempre oppure lavora attorno al target come un raffrescamento o un riscaldamento.",
+          "dryer_behavior": "In modalità Deumidificazione, funziona sempre oppure lavora attorno al target come un raffrescamento o un riscaldamento.",
+          "reverse_cycle": "Dispositivi che sono in realtà un'unica unità che cambia modalità, come un condizionatore comandato tramite switch template. Quando uno subentra a un altro durante un cambio di modalità, il precedente non viene spento prima, così l'unità cambia modalità senza spegnersi.",
+          "fan_with": "Aggiunge le modalità del ventilatore al termostato. Automatico fa funzionare il ventilatore quando funzionano questi dispositivi, Acceso lo fa funzionare sempre e Spento lo lascia com'è. La modalità Solo ventilatore non cambia.",
+          "fan_off_delay": "In Automatico, per quanto tempo il ventilatore continua a funzionare dopo che il dispositivo si ferma, ad esempio per smaltire il calore residuo."
+        }
+      },
+      "settings": {
+        "title": "Temperature e tempi",
+        "data": {
+          "cold_tolerance": "Tolleranza freddo",
+          "hot_tolerance": "Tolleranza caldo",
+          "target_temp": "Temperatura target iniziale",
+          "target_temp_low": "Target inferiore iniziale",
+          "target_temp_high": "Target superiore iniziale",
+          "min_temp": "Temperatura target minima",
+          "max_temp": "Temperatura target massima",
+          "min_cycle_duration": "Durata minima del ciclo",
+          "max_cycle_duration": "Durata massima del ciclo",
+          "cycle_cooldown": "Tempo di riposo",
+          "keep_alive": "Intervallo keep-alive",
+          "initial_hvac_mode": "Modalità al primo avvio",
+          "precision": "Precisione",
+          "target_temp_step": "Passo del target"
+        },
+        "data_description": {
+          "cold_tolerance": "Di quanto la temperatura deve scendere sotto il target prima che parta il riscaldamento e prima che si fermi il raffrescamento. Con target 22 e 0,5, il riscaldamento parte a 21,5.",
+          "hot_tolerance": "Di quanto la temperatura deve salire sopra il target prima che parta il raffrescamento e prima che si fermi il riscaldamento. Con target 22 e 0,5, il riscaldamento si ferma a 22,5.",
+          "target_temp": "Usata finché non imposti un target sul termostato.",
+          "target_temp_low": "Intervallo Caldo/Freddo usato finché non ne imposti uno sul termostato.",
+          "target_temp_high": "Intervallo Caldo/Freddo usato finché non ne imposti uno sul termostato.",
+          "min_temp": "Il target più basso che puoi impostare. Predefinita: 7 °C (45 °F).",
+          "max_temp": "Il target più alto che puoi impostare. Predefinita: 35 °C (95 °F).",
+          "min_cycle_duration": "Quando un dispositivo si accende o si spegne, per quanto tempo resta così prima di cambiare di nuovo. Protegge i compressori.",
+          "max_cycle_duration": "Ferma un dispositivo dopo che ha funzionato così a lungo, anche se serve ancora. Riparte quando serve, dopo il tempo di riposo.",
+          "cycle_cooldown": "Dopo che un dispositivo si ferma, per quanto tempo resta fermo prima di ripartire. Cambiare modalità, target o preset salta il riposo.",
+          "keep_alive": "Ripete il comando acceso/spento attuale con questa frequenza, per dispositivi che possono perdere lo stato, come IR o RF.",
+          "initial_hvac_mode": "La modalità con cui partire la prima volta. In seguito viene ripristinata l'ultima modalità.",
+          "precision": "Precisione della temperatura mostrata.",
+          "target_temp_step": "Passo per modificare il target. Predefinito: la precisione."
+        },
+        "sections": {
+          "device_tolerances": {
+            "name": "Tolleranze separate per riscaldamento e raffrescamento",
+            "description": "Sostituiscono le tolleranze qui sopra per un solo dispositivo. I campi vuoti usano quelle.",
+            "data": {
+              "heater_cold_tolerance": "Tolleranza freddo del riscaldamento",
+              "heater_hot_tolerance": "Tolleranza caldo del riscaldamento",
+              "cooler_cold_tolerance": "Tolleranza freddo del raffrescamento",
+              "cooler_hot_tolerance": "Tolleranza caldo del raffrescamento"
+            },
+            "data_description": {
+              "heater_cold_tolerance": "Il riscaldamento parte quando la temperatura è di tanto sotto il suo target.",
+              "heater_hot_tolerance": "Il riscaldamento si ferma quando la temperatura è di tanto sopra il suo target. Con 0 si ferma esattamente al target.",
+              "cooler_cold_tolerance": "Il raffrescamento si ferma quando la temperatura è di tanto sotto il suo target. Con 0 si ferma esattamente al target.",
+              "cooler_hot_tolerance": "Il raffrescamento parte quando la temperatura è di tanto sopra il suo target."
+            }
+          }
+        }
+      },
+      "presets": {
+        "title": "Preset",
+        "description": "Ogni preset a cui assegni una temperatura viene offerto sul termostato. Uscendo da un preset si torna ai target di prima.",
+        "sections": {
+          "away": {
+            "name": "Fuori casa",
+            "data": {
+              "away_temp": "Temperatura",
+              "away_temp_heater": "Per il riscaldamento",
+              "away_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "away_temp": "Target mentre il preset Fuori casa è attivo.",
+              "away_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "away_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "comfort": {
+            "name": "Comfort",
+            "data": {
+              "comfort_temp": "Temperatura",
+              "comfort_temp_heater": "Per il riscaldamento",
+              "comfort_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "comfort_temp": "Target mentre il preset Comfort è attivo.",
+              "comfort_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "comfort_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "eco": {
+            "name": "Eco",
+            "data": {
+              "eco_temp": "Temperatura",
+              "eco_temp_heater": "Per il riscaldamento",
+              "eco_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "eco_temp": "Target mentre il preset Eco è attivo.",
+              "eco_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "eco_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "home": {
+            "name": "In casa",
+            "data": {
+              "home_temp": "Temperatura",
+              "home_temp_heater": "Per il riscaldamento",
+              "home_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "home_temp": "Target mentre il preset In casa è attivo.",
+              "home_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "home_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "sleep": {
+            "name": "Notte",
+            "data": {
+              "sleep_temp": "Temperatura",
+              "sleep_temp_heater": "Per il riscaldamento",
+              "sleep_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "sleep_temp": "Target mentre il preset Notte è attivo.",
+              "sleep_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "sleep_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          },
+          "activity": {
+            "name": "Attività",
+            "data": {
+              "activity_temp": "Temperatura",
+              "activity_temp_heater": "Per il riscaldamento",
+              "activity_temp_cooler": "Per il raffrescamento"
+            },
+            "data_description": {
+              "activity_temp": "Target mentre il preset Attività è attivo.",
+              "activity_temp_heater": "Sostituisce la temperatura in modalità Caldo e imposta l'estremo inferiore dell'intervallo in Caldo/Freddo.",
+              "activity_temp_cooler": "Sostituisce la temperatura in modalità Freddo e imposta l'estremo superiore dell'intervallo in Caldo/Freddo."
+            }
+          }
+        }
+      },
+      "interlocks": {
+        "title": "Interblocchi",
+        "description": "Condizioni che mantengono spenti i dispositivi. La modalità viene mantenuta e il controllo riprende quando cessano.",
+        "data": {
+          "consent_entity": "Entità di consenso",
+          "tamper_entity": "Entità tamper"
+        },
+        "data_description": {
+          "consent_entity": "Finché questa entità non è accesa (ad esempio un calendario, una pianificazione o un input boolean), tutti i dispositivi restano spenti.",
+          "tamper_entity": "Finché questa entità è accesa (ad esempio un sensore finestra), tutti i dispositivi restano spenti. A differenza del consenso, se non è disponibile non blocca nulla."
+        },
+        "sections": {
+          "water_guard": {
+            "name": "Guardia temperatura acqua",
+            "description": "Per impianti idronici. Il riscaldamento attende che l'acqua di mandata sia abbastanza calda e il raffrescamento che sia abbastanza fredda. Un dispositivo in funzione si ferma appena l'acqua non lo è più.",
+            "data": {
+              "water_sensor": "Sensore temperatura acqua",
+              "water_setpoint_heat": "Setpoint acqua riscaldamento",
+              "water_setpoint_heat_entity": "Setpoint acqua riscaldamento, da un'entità",
+              "water_setpoint_cool": "Setpoint acqua raffrescamento",
+              "water_setpoint_cool_entity": "Setpoint acqua raffrescamento, da un'entità",
+              "water_tolerance": "Tolleranza temperatura acqua"
+            },
+            "data_description": {
+              "water_sensor": "La temperatura dell'acqua di mandata. Senza una lettura, nulla viene bloccato.",
+              "water_setpoint_heat": "Il riscaldamento funziona solo mentre l'acqua è almeno a questo valore, meno la tolleranza.",
+              "water_setpoint_heat_entity": "Ha la precedenza sul valore fisso.",
+              "water_setpoint_cool": "Il raffrescamento funziona solo mentre l'acqua è al massimo a questo valore, più la tolleranza.",
+              "water_setpoint_cool_entity": "Ha la precedenza sul valore fisso.",
+              "water_tolerance": "Predefinita: 0,3."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "no_devices": "Scegli almeno un dispositivo: riscaldamento, raffrescamento, ventilatore o deumidificatore.",
+      "min_max_temp": "La temperatura target minima deve essere inferiore alla massima.",
+      "target_range": "Il target inferiore non deve superare quello superiore.",
+      "zero_duration": "Le durate devono essere maggiori di zero.",
+      "max_below_min": "La durata massima del ciclo deve superare quella minima.",
+      "fan_with_reverse_cycle": "Un ventilatore a ciclo inverso è la stessa unità del riscaldamento o del raffrescamento, quindi non può funzionare insieme a loro.",
+      "water_needs_sensor": "Scegli un sensore di temperatura dell'acqua per la guardia."
+    }
+  },
+  "selector": {
+    "behavior": {
+      "options": {
+        "cooler": "Come un raffrescamento: funziona quando fa troppo caldo",
+        "heater": "Come un riscaldamento: funziona quando fa troppo freddo",
+        "neutral": "Sempre acceso nella sua modalità"
+      }
+    },
+    "device": {
+      "options": {
+        "heater": "Riscaldamento",
+        "cooler": "Raffrescamento",
+        "fan": "Ventilatore",
+        "dryer": "Deumidificatore"
+      }
+    },
+    "hvac_mode": {
+      "options": {
+        "off": "Spento",
+        "heat": "Caldo",
+        "cool": "Freddo",
+        "heat_cool": "Caldo/Freddo",
+        "fan_only": "Solo ventilatore",
+        "dry": "Deumidificazione"
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_hvac_mode": {
+      "message": "{entity_id} non supporta la modalità {hvac_mode}. Modalità supportate: {modes}."
+    },
+    "unsupported_preset": {
+      "message": "{entity_id} non supporta il preset {preset}. Preset supportati: {presets}."
+    },
+    "inverted_range": {
+      "message": "Il target inferiore ({low}) non deve superare quello superiore ({high})."
+    }
+  },
+  "services": {
+    "reload": {
+      "name": "Ricarica",
+      "description": "Ricarica tutti i termostati configurati in YAML."
+    }
+  }
+}

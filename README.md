@@ -179,6 +179,9 @@ Set `keep_alive` (for example 5 minutes) to repeat the current state regularly.
 2. For thermostats set up in the UI, download diagnostics from the helper's menu.
 3. [Open an issue](https://github.com/zacs/ha-dualmodegeneric/issues) with your configuration, the log and what you expected to happen.
 
+## Translations
+The setup and options screens are in English and Italian (thanks to @GiuseppeP96). To add a language, copy `custom_components/dualmode_generic/translations/en.json`, translate the text, and keep the keys and `{placeholders}` as they are. The tests check that.
+
 ## Development
 Tests use [pytest-homeassistant-custom-component](https://github.com/MatthieuDartiailh/pytest-homeassistant-custom-component) and need Python 3.14:
 ```sh
@@ -192,3 +195,6 @@ The decision logic lives in `controller.py` and has no Home Assistant dependency
 Two test files track bugs:
 - `tests/test_known_bugs.py` holds confirmed bugs as strict expected failures.
 - `tests/test_regressions.py` keeps fixed ones from coming back.
+
+## License
+MIT. See [LICENSE](LICENSE).

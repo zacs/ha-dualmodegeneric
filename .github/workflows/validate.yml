@@ -25,5 +25,3 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # license: the repository has no LICENSE file yet.
-          ignore: license
