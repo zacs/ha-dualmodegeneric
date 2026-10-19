@@ -214,6 +214,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         # reverse_cycle devices that another device took over from: they switch
         # over by themselves, so they count as off even while still reading on.
         self._replaced: set[str] = set()
+        # States a user action asked for that a device hasn't reached yet;
+        # re-asserting them isn't held back by min_cycle_duration.
+        self._requested: dict[str, bool] = {}
         self._recheck_job = HassJob(
             self._async_recheck, "dualmode_generic min_cycle recheck", cancel_on_shutdown=True
         )
@@ -602,8 +605,15 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         old_state = event.data["old_state"]
         if new_state is None:
             return
-        self._pending.pop(entity_id, None)
-        if old_state is None or old_state.state != new_state.state:
+        reached = {STATE_ON: True, STATE_OFF: False}.get(new_state.state)
+        # A report that contradicts a command in flight is usually an earlier
+        # command landing, so the command stays in flight until it's reached.
+        if (pending := self._pending.get(entity_id)) is not None and pending[0] is reached:
+            del self._pending[entity_id]
+        if self._requested.get(entity_id) is reached:
+            del self._requested[entity_id]
+        changed = old_state is None or old_state.state != new_state.state
+        if changed:
             self._replaced.discard(entity_id)
             # min_cycle_duration counts from real changes, not from commands,
             # so a command the device never acted on is retried promptly.
@@ -618,7 +628,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             STATE_ON,
             STATE_OFF,
         )
-        owed_off = entity_id in self._off_owed and new_state.state == STATE_ON
+        owed_off = changed and entity_id in self._off_owed and new_state.state == STATE_ON
         if (came_back or owed_off) and self._started:
             self.hass.async_create_task(self._async_control_and_write(), eager_start=True)
         self.async_write_ha_state()
@@ -683,12 +693,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             switching = leaving is not None
             replaceable: frozenset[Role] = frozenset()
             desired: dict[Role, bool] = {}
+            all_off = False
             if not self._consent and (mode is not HVACMode.OFF or switching or gate_changed):
                 # No consent: everything off, whatever the mode (as in 0.2.x).
                 desired = dict.fromkeys(self._devices, False)
-                force = switching = True
+                force = switching = all_off = True
             elif mode is not HVACMode.OFF or switching:
                 if switching:
+                    all_off = mode is HVACMode.OFF
                     mode_entities = self._mode_entities()
                     desired = {
                         role: False
@@ -706,6 +718,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 force=force,
                 keepalive=keepalive,
                 owe_offs=switching,
+                all_off=all_off,
                 replaceable=replaceable,
             )
 
@@ -737,9 +750,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         force: bool,
         keepalive: bool,
         owe_offs: bool,
+        all_off: bool,
         replaceable: frozenset[Role],
     ) -> None:
-        """Send only the commands needed to reach the desired device states."""
+        """Send only the commands needed to reach the desired device states.
+
+        ``all_off`` marks passes that switch everything off (off mode, no
+        consent); devices that handed over are switched off then too.
+        """
         now = dt_util.utcnow()
         mode_entities = self._mode_entities()
 
@@ -765,26 +783,34 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             if on:
                 self._owners[entity_id] = role
                 self._off_owed.discard(entity_id)
+            if self._requested.get(entity_id, on) is not on:
+                del self._requested[entity_id]  # superseded by a newer decision
             available = self._entity_available(entity_id)
-            # User actions compare with the real state; otherwise a command
-            # still in flight counts as done, so it isn't repeated.
-            current = self._entity_on(entity_id, actual=force)
-            if on and entity_id in self._replaced:
-                current = False  # it may still read on after handing over
-            if not on and owe_offs and (current or not available):
+            actual = self.hass.states.is_state(entity_id, STATE_ON)
+            pending = self._pending_state(entity_id)
+            if entity_id in self._replaced and not all_off:
+                actual = False  # it handed over, though it may still read on
+            if force:
+                # User actions act unless both the device and any command still
+                # in flight already agree.
+                needed = actual is not on or (pending is not None and pending is not on)
+            else:
+                # Otherwise a command in flight counts as done and isn't repeated.
+                needed = (actual if pending is None else pending) is not on
+            if not on and owe_offs and (actual or pending is True or not available):
                 self._off_owed.add(entity_id)
             if not available:
-                if current != on:
+                if needed:
                     _LOGGER.debug(
                         "%s: %s is unavailable, not switching it", self.entity_id, entity_id
                     )
                 continue
-            if current == on:
+            if not needed:
                 if keepalive and entity_id in mode_entities:
                     resend.append((entity_id, on))
                 continue
-            owed = entity_id in self._off_owed
-            if not (force or owed) and (wait := self._cycle_remaining(entity_id, now)) is not None:
+            bypass = force or entity_id in self._off_owed or self._requested.get(entity_id) is on
+            if not bypass and (wait := self._cycle_remaining(entity_id, now)) is not None:
                 _LOGGER.debug(
                     "%s: min_cycle_duration keeps %s %s for %s more",
                     self.entity_id,
@@ -794,6 +820,8 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 )
                 self._schedule_recheck(wait)
                 continue
+            if force:
+                self._requested[entity_id] = on
             (turn_on if on else turn_off).append(entity_id)
 
         # reverse_cycle: when one reverse-cycle device takes over from another
@@ -816,10 +844,14 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         if heater and cooler and heater != cooler:
 
             def on_after(entity_id: str) -> bool:
-                return entity_id in turn_on or (
-                    entity_id not in turn_off
-                    and entity_id not in self._replaced
-                    and self._entity_on(entity_id, actual=True)
+                if entity_id in turn_on:
+                    return True
+                if entity_id in turn_off or entity_id in self._replaced:
+                    return False
+                # On, or about to be: a command in flight may still land.
+                return (
+                    self.hass.states.is_state(entity_id, STATE_ON)
+                    or self._pending_state(entity_id) is True
                 )
 
             if on_after(heater) and on_after(cooler):
@@ -879,12 +911,19 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         return closer_role(self._cur_temp, *self._effective_range()) is role
 
     def _entity_on(self, entity_id: str, *, actual: bool = False) -> bool:
-        if not actual and (pending := self._pending.get(entity_id)) is not None:
-            on, since = pending
-            if dt_util.utcnow() - since < PENDING_TIMEOUT:
-                return on
-            del self._pending[entity_id]
+        if not actual and (pending := self._pending_state(entity_id)) is not None:
+            return pending
         return self.hass.states.is_state(entity_id, STATE_ON)
+
+    def _pending_state(self, entity_id: str) -> bool | None:
+        """Return the state of a command still in flight to the device, if any."""
+        if (pending := self._pending.get(entity_id)) is None:
+            return None
+        on, since = pending
+        if dt_util.utcnow() - since < PENDING_TIMEOUT:
+            return on
+        del self._pending[entity_id]
+        return None
 
     def _mode_entities(self) -> set[str]:
         """Return the entities the current mode controls."""

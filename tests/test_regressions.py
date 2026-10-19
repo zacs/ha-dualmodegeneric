@@ -9,8 +9,8 @@ from datetime import timedelta
 import pytest
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.climate import HVACAction
-from homeassistant.const import EVENT_HOMEASSISTANT_START
-from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.const import EVENT_CALL_SERVICE, EVENT_HOMEASSISTANT_START
+from homeassistant.core import CoreState, Event, HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
@@ -465,4 +465,112 @@ async def test_consent_revoked_in_off_mode_stops_devices(hass: HomeAssistant) ->
     await async_toggle(hass, CONSENT, True)
     await async_toggle(hass, HEATER, True)  # switched on by hand while off
     await async_toggle(hass, CONSENT, False)
+    assert devices_on(hass) == set()
+
+
+# Commands still on their way to a slow device.
+RF_COOLER = "switch.rf_cooler"
+
+
+async def test_switch_to_off_cancels_turn_on_in_flight(hass: HomeAssistant) -> None:
+    """Off right after heat: a turn_on that hasn't landed yet is countered."""
+    hass.states.async_set(RF_HEATER, "off")
+    await async_setup_thermostat(hass, temperature=18, heater=RF_HEATER, target_temp=22)
+    recorder = ServiceCallRecorder(hass)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_hvac_mode", hvac_mode="off")
+    assert recorder.calls == [("turn_on", RF_HEATER), ("turn_off", RF_HEATER)]
+
+
+async def test_lowered_target_cancels_turn_on_in_flight(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """Raising then lowering the target quickly ends with the heater told to stop."""
+    hass.states.async_set(RF_HEATER, "off")
+    await async_setup_thermostat(
+        hass, temperature=20, heater=RF_HEATER, target_temp=19, min_cycle_duration={"minutes": 20}
+    )
+    freezer.tick(timedelta(minutes=30))
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    recorder = ServiceCallRecorder(hass)
+    await async_call(hass, "set_temperature", temperature=24)
+    await async_call(hass, "set_temperature", temperature=19)
+    assert recorder.calls == [("turn_on", RF_HEATER), ("turn_off", RF_HEATER)]
+
+    # The turn_on lands late and the turn_off is lost: re-asserting what the
+    # user asked for isn't held back by min_cycle_duration.
+    hass.states.async_set(RF_HEATER, "on")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=11))
+    await async_set_temperature(hass, 20.1)
+    assert recorder.calls[-1] == ("turn_off", RF_HEATER)
+    assert len(recorder.calls) == 3
+
+
+async def test_heat_cool_no_cooler_while_heater_turn_on_in_flight(hass: HomeAssistant) -> None:
+    """A range change right after a heater turn_on doesn't start the cooler alongside it."""
+    hass.states.async_set(RF_HEATER, "off")
+    hass.states.async_set(RF_COOLER, "off")
+    await async_setup_thermostat(
+        hass,
+        temperature=19,
+        heater=RF_HEATER,
+        cooler=RF_COOLER,
+        enable_heat_cool=True,
+        target_temp_low=20,
+        target_temp_high=24,
+    )
+    recorder = ServiceCallRecorder(hass)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    await async_call(hass, "set_temperature", target_temp_low=16, target_temp_high=18)
+    assert recorder.calls == [
+        ("turn_on", RF_HEATER),
+        ("turn_off", RF_HEATER),
+        ("turn_on", RF_COOLER),
+    ]
+
+
+async def test_device_echo_does_not_loop(hass: HomeAssistant) -> None:
+    """A device answering turn_off by re-reporting 'on' (new attributes) isn't flooded."""
+    hass.states.async_set(RF_HEATER, "off")
+    await async_setup_thermostat(hass, temperature=18, heater=RF_HEATER, target_temp=22)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    hass.states.async_set(RF_HEATER, "on", {"n": 0})
+    await hass.async_block_till_done()
+    count = 0
+
+    @callback
+    def echo(event: Event) -> None:
+        nonlocal count
+        if event.data["domain"] == "homeassistant" and event.data["service"] == "turn_off":
+            count += 1
+            if count < 50:
+                hass.loop.call_soon(hass.states.async_set, RF_HEATER, "on", {"n": count})
+
+    hass.bus.async_listen(EVENT_CALL_SERVICE, echo)
+    await async_call(hass, "set_hvac_mode", hvac_mode="off")
+    for _ in range(10):
+        await hass.async_block_till_done()
+    assert count == 1
+
+
+async def test_handed_over_device_not_powered_off(hass: HomeAssistant) -> None:
+    """A reverse_cycle device that handed over isn't sent 'off' while its unit runs."""
+    await async_setup_thermostat(
+        hass,
+        temperature=26,
+        target_temp=28,
+        enable_heat_cool=True,
+        target_temp_low=20,
+        reverse_cycle="heater, cooler",
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_temperature", temperature=22, hvac_mode="cool")
+    assert is_on(hass, COOLER)
+    recorder = ServiceCallRecorder(hass)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    assert ("turn_off", HEATER) not in recorder.calls
+
+    # Switching everything off still switches it off.
+    await async_call(hass, "set_hvac_mode", hvac_mode="off")
     assert devices_on(hass) == set()

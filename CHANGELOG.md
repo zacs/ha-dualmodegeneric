@@ -23,21 +23,23 @@ Most of these are bug fixes; the rest are noted as deliberate. If you relied on 
 - On a mode change, a listed device is no longer explicitly turned off only when another listed device takes over in the same step, i.e. the same unit switching modes. It used to be skipped whatever happened, so it could keep running in the new mode and stopped the new mode's device from starting. (#36)
 - If a device that isn't listed takes over (say a separate fan), or nothing does yet, the outgoing device is turned off.
 - A device that handed over counts as off, even if it still reads on (optimistic template switches do). When it's needed again it is sent "on".
+- A device that handed over isn't sent "off" either, since an IR template switch would power the unit off. The exceptions are switching to off and revoking consent.
 - Unchanged: `reverse_cycle` only applies to mode changes. In heat/cool, handing heating over to cooling still turns the heater off first. That matters when the heater is a group that shares a relay with the cooler.
 
 **Timing**
 - `min_cycle_duration` is tracked separately for each device. In heat/cool the cooler is now protected too.
 - `min_cycle_duration` counts from the device's actual state changes. A command the device didn't act on is retried without waiting for it.
 - When `min_cycle_duration` holds back a change, the change happens as soon as the duration has passed instead of at the next temperature reading.
-- The heater and cooler never run at the same time. If `min_cycle_duration` keeps one running, the other waits for it.
+- The thermostat never starts the heater while the cooler runs, or the reverse. If `min_cycle_duration` keeps one running, or a command to start it is still on its way, the other waits. This includes one you switched on by hand: in cool mode, the cooler won't start while you run the heater.
 - `keep_alive` now re-sends "on" to a running device, which never worked before. In heat/cool it repeats the state of both the heater and the cooler.
 - Deliberate change: `keep_alive` respects `min_cycle_duration`. It used to ignore it.
 
 **Commands sent to devices**
 - In fan-only or dry mode with `neutral` behavior, `turn_on` is no longer re-sent on every temperature update. IR blasters stop beeping on every reading. These modes also run before the sensor has reported, since they don't use the temperature.
-- A command isn't repeated while a device hasn't reported back yet. If the device still hasn't changed after 10 seconds, the command is re-sent on the next temperature update. Changing the mode, the target or the preset always re-sends.
+- A command isn't repeated while it's on its way to a device, meaning until the device reports the new state. Other updates from the device don't count. If the device still hasn't changed after 10 seconds, the command is re-sent on the next temperature update.
+- Changing the mode, the target or the preset sends a command whenever the device, or a command still on its way to it, disagrees. So a quick change of mind is never lost. What you asked for keeps being re-asserted until the device reports it, without waiting for `min_cycle_duration`.
 - Unavailable devices aren't sent commands, `keep_alive` included. They receive the current decision as soon as they come back.
-- A device that should have been switched off by a mode change, by switching to off, or by consent being revoked, but missed it, is switched off when it shows up on. Being unavailable at the time counts as missing it. This also happens in off mode, until the device reports off.
+- A device that should have been switched off by a mode change, by switching to off, or by consent being revoked, but missed it, is switched off when it shows up on. Being unavailable at the time counts as missing it. This also happens in off mode, until the device reports off. Coming back as "unknown" doesn't count as reporting off.
 - Commands are linked to whatever triggered them, so the logbook shows the cause.
 
 **Turning on, starting up and restoring**
