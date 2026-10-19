@@ -1,0 +1,307 @@
+"""Setting up and editing thermostats from the UI."""
+
+from typing import Any
+
+import pytest
+from homeassistant.components.climate import HVACMode
+from homeassistant.config_entries import SOURCE_USER
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from .common import COOLER, DOMAIN, DRYER, FAN, HEATER, SENSOR, async_setup_devices
+
+ENTITY = "climate.living_room"
+
+
+async def _start(hass: HomeAssistant) -> dict[str, Any]:
+    await async_setup_devices(hass)
+    hass.states.async_set(SENSOR, "20")
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+    return result
+
+
+async def test_create_full(hass: HomeAssistant, entity_registry: er.EntityRegistry) -> None:
+    """Every step, with all devices, creates a working thermostat."""
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            "name": "Living room",
+            "target_sensor": SENSOR,
+            "heater": HEATER,
+            "cooler": COOLER,
+            "fan": FAN,
+        },
+    )
+    assert result["step_id"] == "behavior"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"enable_heat_cool": True, "fan_behavior": "cooler", "reverse_cycle": ["heater", "cooler"]},
+    )
+    assert result["step_id"] == "settings"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            "cold_tolerance": 0.5,
+            "hot_tolerance": 0.4,
+            "target_temp_low": 20,
+            "target_temp_high": 24,
+            "min_cycle_duration": {"hours": 0, "minutes": 5, "seconds": 0},
+            "precision": "0.5",
+        },
+    )
+    assert result["step_id"] == "presets"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"away_temp_heater": 16, "away_temp_cooler": 28}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Living room"
+    assert result["data"] == {}
+    assert result["options"] == {
+        "name": "Living room",
+        "target_sensor": SENSOR,
+        "heater": HEATER,
+        "cooler": COOLER,
+        "fan": FAN,
+        "enable_heat_cool": True,
+        "fan_behavior": "cooler",
+        "reverse_cycle": ["heater", "cooler"],
+        "cold_tolerance": 0.5,
+        "hot_tolerance": 0.4,
+        "target_temp_low": 20,
+        "target_temp_high": 24,
+        "min_cycle_duration": {"hours": 0, "minutes": 5, "seconds": 0},
+        "precision": "0.5",
+        "away_temp_heater": 16,
+        "away_temp_cooler": 28,
+    }
+    await hass.async_block_till_done()
+
+    state = hass.states.get(ENTITY)
+    assert state is not None
+    assert state.attributes["hvac_modes"] == [
+        HVACMode.COOL,
+        HVACMode.HEAT,
+        HVACMode.FAN_ONLY,
+        HVACMode.OFF,
+        HVACMode.HEAT_COOL,
+    ]
+    assert state.attributes["target_temp_step"] == 0.5
+    assert state.attributes["preset_modes"] == ["none", "away"]
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert entity_registry.async_get(ENTITY).unique_id == entry.entry_id
+
+
+async def test_single_device_skips_behavior(hass: HomeAssistant) -> None:
+    """With only a heater there's nothing to choose about how devices combine."""
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Living room", "target_sensor": SENSOR, "heater": HEATER}
+    )
+    assert result["step_id"] == "settings"
+    schema_keys = {str(key) for key in result["data_schema"].schema}
+    assert "target_temp_low" not in schema_keys
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"cold_tolerance": 0.3, "hot_tolerance": 0.3}
+    )
+    assert result["step_id"] == "presets"
+    schema_keys = {str(key) for key in result["data_schema"].schema}
+    assert schema_keys == {"away_temp", "away_temp_heater", "consent_entity"}
+
+
+async def test_needs_a_device(hass: HomeAssistant) -> None:
+    """A thermostat without any device is refused."""
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Living room", "target_sensor": SENSOR}
+    )
+    assert result["errors"] == {"base": "no_devices"}
+
+
+@pytest.mark.parametrize(
+    ("settings", "error"),
+    [
+        ({"min_temp": 25, "max_temp": 18}, "min_max_temp"),
+        ({"target_temp_low": 25, "target_temp_high": 20}, "target_range"),
+        ({"keep_alive": {"hours": 0, "minutes": 0, "seconds": 0}}, "zero_duration"),
+    ],
+)
+async def test_settings_validation(
+    hass: HomeAssistant, settings: dict[str, Any], error: str
+) -> None:
+    """Contradictory settings are caught in the form."""
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "Living room", "target_sensor": SENSOR, "heater": HEATER, "cooler": COOLER},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"enable_heat_cool": True}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"cold_tolerance": 0.3, "hot_tolerance": 0.3, **settings}
+    )
+    assert result["errors"] == {"base": error}
+
+
+async def _entry(hass: HomeAssistant, **options: Any) -> MockConfigEntry:
+    await async_setup_devices(hass)
+    hass.states.async_set(SENSOR, "20")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Living room",
+        options={
+            "name": "Living room",
+            "target_sensor": SENSOR,
+            "heater": HEATER,
+            "cold_tolerance": 0.3,
+            "hot_tolerance": 0.3,
+            **options,
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_options_menu(hass: HomeAssistant) -> None:
+    """The options start from a menu of sections; behavior only when it applies."""
+    entry = await _entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+    assert result["menu_options"] == ["devices", "settings", "presets"]
+
+    entry = await _entry(hass, cooler=COOLER)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["menu_options"] == ["devices", "behavior", "settings", "presets"]
+
+
+async def test_options_edit_settings(hass: HomeAssistant) -> None:
+    """Editing a section saves it and reloads the thermostat."""
+    entry = await _entry(hass, max_temp=30)
+    assert hass.states.get(ENTITY).attributes["max_temp"] == 30
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "settings"}
+    )
+    assert result["step_id"] == "settings"
+    # max_temp left out: cleared.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"cold_tolerance": 0.5, "hot_tolerance": 0.5, "min_temp": 15}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    assert entry.options["cold_tolerance"] == 0.5
+    assert "max_temp" not in entry.options
+    attributes = hass.states.get(ENTITY).attributes
+    assert (attributes["min_temp"], attributes["max_temp"]) == (15, 35)
+
+
+async def test_options_add_device_then_behavior(hass: HomeAssistant) -> None:
+    """Adding a fan leads on to choosing how it behaves."""
+    entry = await _entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "devices"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"target_sensor": SENSOR, "heater": HEATER, "dryer": DRYER}
+    )
+    assert result["step_id"] == "behavior"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"dryer_behavior": "cooler"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options["dryer_behavior"] == "cooler"
+    assert HVACMode.DRY in hass.states.get(ENTITY).attributes["hvac_modes"]
+
+
+async def test_options_removing_a_device_forgets_its_settings(hass: HomeAssistant) -> None:
+    """Settings for a removed device go too, so no hidden choice can fail a form."""
+    entry = await _entry(
+        hass,
+        cooler=COOLER,
+        fan=FAN,
+        enable_heat_cool=True,
+        fan_behavior="cooler",
+        reverse_cycle=["heater", "cooler", "fan"],
+        target_temp_low=20,
+        target_temp_high=24,
+        away_temp_heater=16,
+        away_temp_cooler=28,
+        initial_hvac_mode="heat_cool",
+    )
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "devices"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"target_sensor": SENSOR, "heater": HEATER, "fan": FAN}
+    )
+    assert result["step_id"] == "behavior"
+    suggested = {
+        str(key): key.description["suggested_value"]
+        for key in result["data_schema"].schema
+        if key.description
+    }
+    assert suggested == {"fan_behavior": "cooler", "reverse_cycle": ["heater", "fan"]}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"fan_behavior": "cooler", "reverse_cycle": ["heater", "fan"]}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options == {
+        "name": "Living room",
+        "target_sensor": SENSOR,
+        "heater": HEATER,
+        "fan": FAN,
+        "cold_tolerance": 0.3,
+        "hot_tolerance": 0.3,
+        "fan_behavior": "cooler",
+        "reverse_cycle": ["heater", "fan"],
+        "away_temp_heater": 16,
+    }
+
+    # Down to one device: nothing left to choose, so the behavior settings go.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "devices"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"target_sensor": SENSOR, "heater": HEATER}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert "fan_behavior" not in entry.options
+    assert "reverse_cycle" not in entry.options
+    assert hass.states.get(ENTITY).attributes["hvac_modes"] == [HVACMode.HEAT, HVACMode.OFF]
+
+
+async def test_options_turning_off_heat_cool_forgets_its_range(hass: HomeAssistant) -> None:
+    """Without Heat/cool, its range and its use as the starting mode go too."""
+    entry = await _entry(
+        hass,
+        cooler=COOLER,
+        enable_heat_cool=True,
+        target_temp_low=20,
+        target_temp_high=24,
+        initial_hvac_mode="heat_cool",
+    )
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "behavior"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"enable_heat_cool": False}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    for key in ("target_temp_low", "target_temp_high", "initial_hvac_mode"):
+        assert key not in entry.options

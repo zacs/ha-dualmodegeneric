@@ -1,98 +1,141 @@
-# Home Assistant - Dual Mode Generic Thermostat
+# Multi-Mode Generic Thermostat for Home Assistant
 
-> Special thanks to [shandoosheri](https://community.home-assistant.io/t/heat-cool-generic-thermostat/76443) for getting this to work on older versions of Home Assistant, which gave me an easy blueprint to follow. And thanks [@kevinvincent](https://github.com/kevinvincent) for writing a nice `custom_component` readme for me to fork.
+One thermostat for up to four separate devices: a **heater**, a **cooler**, a **fan** and a **dryer**. Each can be any switch-like entity: relays, smart plugs, template switches driving an IR blaster or another climate entity, groups, and so on. It began as a fork of Home Assistant's built-in [`generic_thermostat`](https://www.home-assistant.io/integrations/generic_thermostat/), which only drives a single device.
 
-This component is a straightfoward fork of the mainline `generic_thermostat`.
+- Each device adds a mode: a heater adds Heat, a cooler adds Cool, a fan adds Fan only and a dryer adds Dry.
+- A heater and a cooler together can also offer **Heat/cool**, which keeps the temperature within a range.
+- Set it up from the UI or in YAML.
 
-Requires Home Assistant 2026.4 or newer. See [CHANGELOG.md](CHANGELOG.md) for what changed in 1.0.
+Requires **Home Assistant 2026.4** or newer. See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
-## Installation (HACS) - Recommended
-0. Have [HACS](https://custom-components.github.io/hacs/installation/manual/) installed, this will allow you to easily update
-1. Add `https://github.com/zacs/ha-dualmodegeneric` as a [custom repository](https://custom-components.github.io/hacs/usage/settings/#add-custom-repositories) as Type: Integration
-2. Click install under "Dual Mode Generic Thermostat", restart your instance.
+> Thanks to [shandoosheri](https://community.home-assistant.io/t/heat-cool-generic-thermostat/76443) for the original idea, and to everyone who has contributed since.
 
-## Installation (Manual)
-1. Download this repository as a ZIP (green button, top right) and unzip the archive
-2. Copy `/custom_components/dualmode_generic` to your `<config_dir>/custom_components/` directory
-   * You will need to create the `custom_components` folder if it does not exist
-   * On Hassio the final location will be `/config/custom_components/dualmode_generic`
-   * On Hassbian the final location will be `/home/homeassistant/.homeassistant/custom_components/dualmode_generic`
+## Installation
 
-## Configuration
-Add the following to your configuration file
+**HACS (recommended):**
+1. Install [HACS](https://hacs.xyz/).
+2. Add `https://github.com/zacs/ha-dualmodegeneric` as a custom repository of type *Integration*.
+3. Install **Multi-Mode Generic Thermostat** and restart Home Assistant.
 
-### Example Config
+**Manual:** copy `custom_components/dualmode_generic` into your `<config>/custom_components/` folder and restart Home Assistant.
+
+## Setup
+
+### From the UI
+Go to **Settings → Devices & services → Helpers → Create helper → Multi-Mode Generic Thermostat**. The steps are:
+1. **Sensor and devices:** the temperature sensor and the devices to control. Devices can be switches, input booleans, fans, lights, groups or dehumidifiers.
+2. **How the devices work:** heat/cool mode, fan and dryer behavior, and reverse-cycle devices. This step only appears when it applies.
+3. **Temperatures and timing:** tolerances, limits, minimum run time and keep-alive.
+4. **Away and consent.**
+
+To change anything later, open the helper and select **Configure**.
+
+### In YAML
 ```yaml
 climate:
   - platform: dualmode_generic
-    name: My Thermostat
-    unique_id: climate.my_thermostat
+    name: Living room
+    unique_id: living_room_thermostat
+    target_sensor: sensor.living_room_temperature
     heater: switch.heater
-    cooler: switch.cooler
+    cooler: switch.air_conditioner
     fan: switch.fan
-    fan_behavior: cooler
-    dryer: switch.dryer
-    dryer_behavior: cooler
-    target_sensor: sensor.temperature_sensor
-    reverse_cycle: cooler, heater
-    enable_heat_cool: True
-    min_temp: 16
-    max_temp: 30
-    cold_tolerance: 0.8
-    hot_tolerance: 0.4
+    enable_heat_cool: true
+    cold_tolerance: 0.3
+    hot_tolerance: 0.3
     min_cycle_duration:
-        minutes: 20
-    consent_entity: calendar.schedule_time
+      minutes: 5
+    away_temp_heater: 16
+    away_temp_cooler: 28
 ```
+After editing YAML, call the `dualmode_generic.reload` action to apply changes without restarting. Configurations written for 0.2.x work unchanged.
 
-### Possible values for *_behavior
+## Options
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `target_sensor` | required | Temperature sensor the thermostat acts on. |
+| `heater`, `cooler`, `fan`, `dryer` | – | Devices to control. At least one is needed. Each adds its mode. |
+| `name` | Generic Thermostat | |
+| `unique_id` | – | YAML only. Lets you manage the entity in the UI. |
+| `enable_heat_cool` | `false` | Adds Heat/cool mode. Needs both a heater and a cooler. |
+| `cold_tolerance` | 0.3 | Heating starts at `target − cold_tolerance`; cooling stops there too. |
+| `hot_tolerance` | 0.3 | Cooling starts at `target + hot_tolerance`; heating stops there too. |
+| `target_temp` | – | Starting target, used until you set one. |
+| `target_temp_low`, `target_temp_high` | – | Starting Heat/cool range. |
+| `min_temp`, `max_temp` | 7 °C, 35 °C | Limits for the target. |
+| `fan_behavior`, `dryer_behavior` | `neutral` | `neutral`: always on in its mode. `cooler`: runs when too warm. `heater`: runs when too cold. |
+| `reverse_cycle` | – | Devices that are one unit switching modes, e.g. `heater, cooler`. See [Reverse-cycle air conditioners](#reverse-cycle-air-conditioners). |
+| `min_cycle_duration` | – | Once a device switches on or off, it stays that way at least this long. |
+| `keep_alive` | – | Repeat the current command this often, for devices that can lose state. |
+| `initial_hvac_mode` | `off` | Mode on the very first start. Afterwards the last mode is restored. |
+| `away_temp` | – | Target for the Away preset. Setting any away temperature adds the preset. |
+| `away_temp_heater`, `away_temp_cooler` | – | Away targets for heating and cooling. In Heat/cool they set the low and high ends of the range. |
+| `consent_entity` | – | While this entity isn't `on`, every device is kept off. |
+| `target_humidity_sensor` | – | Shown as the current humidity only. |
+| `precision`, `target_temp_step` | system default | `0.1`, `0.5` or `1`. |
+
+## How it behaves
+
+| Mode | Device | Starts at | Stops at |
+| --- | --- | --- | --- |
+| Heat | heater | target − cold_tolerance | target + hot_tolerance |
+| Cool | cooler | target + hot_tolerance | target − cold_tolerance |
+| Heat/cool | heater | low − cold_tolerance | low + hot_tolerance |
+| | cooler | high + hot_tolerance | high − cold_tolerance |
+| Fan only, Dry | fan, dryer | depends on behavior: always (`neutral`), like a cooler, or like a heater | |
+| Off | – | never | – |
+
+The rules worth knowing:
+- **Only the current mode's device is controlled.** A fan you run yourself keeps running while heat mode cycles the heater. Changing mode turns off devices that aren't part of the new mode.
+- **Off leaves your devices alone.** Switching to off turns everything off once. After that, nothing is touched except to finish switching off a device that missed it, so you can run devices by hand.
+- **Heater and cooler never run at the same time.** In Heat/cool, the system is idle between the two thresholds.
+- **`min_cycle_duration` applies per device**, and takes effect as soon as it has passed. Changing the mode, target or preset overrides it, because that's you asking.
+- **Without consent**, every device is turned off and the mode is kept. This applies in any mode.
+- **Restarts restore everything:** mode, all targets, preset, and the mode `climate.turn_on` returns to.
+- **Devices that misbehave are handled.**
+  - Commands aren't repeated while a device hasn't reported back yet.
+  - Unavailable devices aren't sent commands, and get the current decision once they're back.
+  - A device that missed being switched off is switched off when it shows up on.
+- **If the temperature sensor goes unavailable**, the last reading is kept.
+
+## Recipes
+
+### Reverse-cycle air conditioners
+Use template switches that put the unit in each mode, and list them in `reverse_cycle`. The unit can be driven over IR, or by setting the mode of another climate entity.
+
+When you change mode and the new mode's switch needs to turn on, the old switch isn't turned off first. The unit changes mode directly instead of powering off and back on. If the new mode doesn't need to run yet, the old switch is turned off. A listed device that's replaced this way counts as off, even if its template switch still reads on.
+
 ```yaml
-fan_behavior: [cooler, neutral, heater] # <-- only one
-dryer_behavior: [cooler, neutral, heater] # <-- only one
+reverse_cycle: heater, cooler, fan, dryer
 ```
 
-### Possible values for reverse_cycle
-```yaml
-reverse_cycle: cooler, heater, dryer, fan # <-- multiple are possible, (True/False) are still valid for backward compatibility
-```
+Only list devices that really are one unit. If the incoming device isn't listed, the outgoing one is turned off first. In Heat/cool, handing heating over to cooling always turns the heater off first.
 
-The component shares the same configuration variables as the standard `generic_thermostat`, with some exceptions:
-* A `cooler` variable has been added where you can specify the `entity_id` of your switch for a cooling unit (AC, fan, etc).
-* A `fan` and `dryer` variable have been added where you can specify the `entity_id`s of your switches for a fan and/or dryer unit.
-* All the `switches`/`input_booleans` are optional, so the user can decide which modes he wants to use 
-  (some HVAC only supports `Cool`, `Dry`, `Fan_only`). This together with `template_switches` makes for a great way to 
-  make mobile HVACs controllable via IR.
-* If the your climate unit offers multiple modes (e.g. a reverse cycle air conditioner) setting `reverse_cycle` to `cooler, heater` will ensure the device isn't switched off entirely when switching modes
-* The `ac_mode` variable has been removed, since it makes no sense for this use case.
-* `target_temp_high` and `target_temp_low` set the default value for the upper and lower setting for temperature range when in `HEAT_COOL` mode
+### Compressor and reversing-valve relays
+Don't point `heater` at a group that shares a relay with `cooler`. Create one template switch per mode instead. For example, *heat* switches the valve and the compressor on, and *cool* switches the valve off and the compressor on. Make each template's state reflect its own mode, then list the template switches in `reverse_cycle`.
 
-Refer to the [Generic Thermostat documentation](https://www.home-assistant.io/components/generic_thermostat/) for details on the rest of the variables. This component doesn't change their functionality.
+### One relay that both heats and cools
+If something else decides the direction (a changeover valve, a seasonal setting), set `heater` and `cooler` to the same entity. The thermostat never switches it off and on just to change role, and reports heating or cooling based on which side of the range triggered it.
 
-## Behavior
+### Continuous fan with a cycling compressor
+Switch the fan on yourself (or with an automation) and use Cool mode. The compressor cycles while the fan keeps running.
 
-* For `HEAT` or `COOL` modes, the thermostat will follow standard mode-based behavior: if set to "cool," the only 
-  switch which can be activated is the `cooler`. This means if the target temperature is higher than the actual 
-  temperateure, the `heater` will _not_ start. Vice versa is also true.
+### Schedules, windows and hydronic systems
+Set `consent_entity` to a schedule, a calendar, an input boolean, or a sensor that's on when the boiler is ready. The thermostat keeps everything off whenever it isn't `on`. For a window sensor, which is on while the window is open, use a template binary sensor that inverts it.
 
-* For `HEAT_COOL` mode, the thermostat will attempt to maintain the temperature within the set range, 
-  turning on the configured heater when the temperature drops below the bottom of the range by `cold_tolerance` 
-  and turning on the configured cooler when the temperature rises above the top of the set range by the `hot_tolerance` 
-  amount. When the measured temperature is within the configured range by `(hot|cold)_tolerance` the thermostat will 
-  transition to idle mode and both heater and cooler will be turned off.
-    * __This mode needs to be enabled explicitly by setting `enable_heat_cool` to `True`!__
-    * __Be careful with `min_cycle_duration`! If you set it too high, your AC will bounce between too hot and too cold 
-      when using `heat_cool`!__
+### IR and RF devices that miss commands
+Set `keep_alive` (for example 5 minutes) to repeat the current state regularly.
 
-* Keepalive logic has been updated to be aware of the mode in current use, so should function as expected.
-
-* By default, the component will restore the last state of the thermostat prior to a restart.
-
-* While `heater`/`cooler`/`dryer`/`fan` are documented to be `switch`es, they can also be `input_boolean`s 
-  if necessary. Note that these are assumed to be exclusively for the use of the thermostat - 
-  the thermostat will report its mode and change its behaviour based on the position of these switches.
-
-* `consent_entity`is an optional entity (e.g., `binary_sensor`, `input_boolean`, or `calendar`) that acts as an additional control for the thermostat. When the entity is in the "on" state (or equivalent, such as `true` for calendars), the thermostat operates normally. When the entity is "off" or unavailable, all devices controlled by the thermostat (heater, cooler, dryer, fan) are turned off, but the thermostat retains its previous HVAC mode setting ("keep previous mode"). This allows you to schedule thermostat operation using calendar entities or other logic, without needing separate automations.
-
+## Reporting an issue
+1. Enable debug logging and reproduce the problem:
+   ```yaml
+   logger:
+     logs:
+       custom_components.dualmode_generic: debug
+   ```
+2. For thermostats set up in the UI, download diagnostics from the helper's menu.
+3. [Open an issue](https://github.com/zacs/ha-dualmodegeneric/issues) with your configuration, the log and what you expected to happen.
 
 ## Development
 Tests use [pytest-homeassistant-custom-component](https://github.com/MatthieuDartiailh/pytest-homeassistant-custom-component) and need Python 3.14:
@@ -102,19 +145,8 @@ pip install -r requirements_test.txt
 pytest
 ruff check . && ruff format --check .
 ```
-`tests/test_known_bugs.py` holds tests for confirmed bugs, marked as expected failures. When a fix makes one pass, the suite fails until its `xfail` marker is removed.
+The decision logic lives in `controller.py` and has no Home Assistant dependency.
 
-## Reporting an Issue
-1. Setup your logger to print debug messages for this component using:
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.dualmode_generic: debug
-```
-2. Restart HA
-3. Verify you're still having the issue
-4. File an issue in this Github Repository containing your HA log (Developer section > Info > Load Full Home Assistant Log)
-   * You can paste your log file at pastebin https://pastebin.com/ and submit a link.
-   * Please include details about your setup (Pi, NUC, etc, docker?, HASSOS?)
-   * The log file can also be found at `/<config_dir>/home-assistant.log`
+Two test files track bugs:
+- `tests/test_known_bugs.py` holds confirmed bugs as strict expected failures.
+- `tests/test_regressions.py` keeps fixed ones from coming back.
