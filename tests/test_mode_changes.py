@@ -1,7 +1,9 @@
 """Switching between modes, and turning the thermostat on and off."""
 
+import pytest
 from homeassistant.components.climate import HVACAction, HVACMode
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 from .common import (
     DRYER,
@@ -52,10 +54,6 @@ async def test_heat_to_fan_and_back(hass: HomeAssistant) -> None:
     await async_call(hass, "set_hvac_mode", hvac_mode="fan_only")
     assert devices_on(hass) == {"fan"}
     await async_call(hass, "set_hvac_mode", hvac_mode="heat")
-    assert "fan" not in devices_on(hass)
-    # The heater is guaranteed to be running by the next reading at the latest
-    # (see test_known_bugs.py::test_mode_switch_starts_new_device_immediately).
-    await async_set_temperature(hass, 20.9)
     assert devices_on(hass) == {"heater"}
 
 
@@ -65,8 +63,6 @@ async def test_dry_to_cool(hass: HomeAssistant) -> None:
     await async_call(hass, "set_hvac_mode", hvac_mode="dry")
     assert devices_on(hass) == {"dryer"}
     await async_call(hass, "set_hvac_mode", hvac_mode="cool")
-    assert "dryer" not in devices_on(hass)
-    await async_set_temperature(hass, 23.1)
     assert devices_on(hass) == {"cooler"}
 
 
@@ -101,3 +97,28 @@ async def test_turn_on_restores_previous_mode(hass: HomeAssistant) -> None:
     await async_call(hass, "turn_on")
     assert thermostat(hass).state == HVACMode.COOL
     assert devices_on(hass) == {"cooler"}
+
+
+async def test_turn_on_without_history(hass: HomeAssistant) -> None:
+    """With no previous mode, turn_on prefers heat_cool, then heat, then cool."""
+    await async_setup_thermostat(hass, enable_heat_cool=True)
+    await async_call(hass, "turn_on")
+    assert thermostat(hass).state == HVACMode.HEAT_COOL
+
+
+async def test_set_temperature_with_mode(hass: HomeAssistant) -> None:
+    """A mode passed with set_temperature applies, with the target linked to it."""
+    await async_setup_thermostat(hass, temperature=21, **CONFIG)
+    await async_call(hass, "set_temperature", temperature=24, hvac_mode="heat")
+    state = thermostat(hass)
+    assert state.state == HVACMode.HEAT
+    assert state.attributes["temperature"] == 24
+    assert devices_on(hass) == {"heater"}
+
+
+async def test_inverted_range_rejected(hass: HomeAssistant) -> None:
+    """A range whose low end is above its high end is refused."""
+    await async_setup_thermostat(hass, enable_heat_cool=True)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    with pytest.raises(ServiceValidationError):
+        await async_call(hass, "set_temperature", target_temp_low=25, target_temp_high=20)

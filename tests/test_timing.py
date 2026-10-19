@@ -2,18 +2,19 @@
 
 from datetime import timedelta
 
-import pytest
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from .common import (
+    COOLER,
     HEATER,
     ServiceCallRecorder,
     async_call,
     async_set_temperature,
     async_setup_thermostat,
+    devices_on,
     is_on,
 )
 
@@ -72,8 +73,6 @@ async def test_user_actions_bypass_min_cycle(hass: HomeAssistant) -> None:
     assert not is_on(hass, HEATER)
 
 
-# TODO(phase 1): track keep_alive with cancel_on_shutdown=True and drop this marker.
-@pytest.mark.parametrize("expected_lingering_timers", [True])
 async def test_keep_alive_resends_off_while_idle(hass: HomeAssistant) -> None:
     """keep_alive repeats 'off' for an idle device (e.g. for lossy IR/RF switches)."""
     await async_setup_thermostat(hass, temperature=25, target_temp=22, keep_alive={"minutes": 5})
@@ -82,3 +81,65 @@ async def test_keep_alive_resends_off_while_idle(hass: HomeAssistant) -> None:
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=5, seconds=1))
     await hass.async_block_till_done()
     assert ("turn_off", HEATER) in recorder.calls
+
+
+async def test_min_cycle_rechecks_on_its_own(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """A change held back by min_cycle_duration happens when it expires, not at the next reading."""
+    await async_setup_thermostat(hass, temperature=21, **CONFIG)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_set_temperature(hass, 23)
+    assert is_on(hass, HEATER)
+
+    freezer.tick(timedelta(minutes=10, seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert not is_on(hass, HEATER)
+
+
+async def test_min_cycle_applies_per_device(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """Each device has its own timer: a heater that just stopped doesn't hold up the cooler."""
+    await async_setup_thermostat(
+        hass,
+        temperature=19,
+        enable_heat_cool=True,
+        target_temp_low=20,
+        target_temp_high=24,
+        cold_tolerance=0.5,
+        hot_tolerance=0.5,
+        min_cycle_duration={"minutes": 10},
+    )
+    freezer.tick(timedelta(minutes=11))  # devices have been off long enough
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    freezer.tick(timedelta(minutes=11))
+    await async_set_temperature(hass, 25)  # heater ran long enough; cooler was off long enough
+    assert devices_on(hass) == {"cooler"}
+
+
+async def test_keep_alive_in_heat_cool(hass: HomeAssistant) -> None:
+    """In heat_cool, keep_alive repeats the state of both devices."""
+    await async_setup_thermostat(
+        hass,
+        temperature=22,
+        enable_heat_cool=True,
+        target_temp_low=20,
+        target_temp_high=24,
+        keep_alive={"minutes": 5},
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    recorder = ServiceCallRecorder(hass)
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=5, seconds=1))
+    await hass.async_block_till_done()
+    assert sorted(recorder.calls) == [("turn_off", COOLER), ("turn_off", HEATER)]
+
+
+async def test_keep_alive_does_nothing_when_off(hass: HomeAssistant) -> None:
+    """Off leaves devices entirely alone, keep_alive included."""
+    await async_setup_thermostat(hass, temperature=25, keep_alive={"minutes": 5})
+    recorder = ServiceCallRecorder(hass)
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=5, seconds=1))
+    await hass.async_block_till_done()
+    assert recorder.calls == []
