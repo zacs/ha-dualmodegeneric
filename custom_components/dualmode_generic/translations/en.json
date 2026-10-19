@@ -1,0 +1,238 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Create a multi-mode thermostat",
+        "description": "Each device adds a mode: a heater adds Heat, a cooler adds Cool, a fan adds Fan only and a dryer adds Dry. A heater plus a cooler can also offer Heat/cool. Devices can be switches, input booleans, fans, lights, groups or dehumidifiers.",
+        "data": {
+          "name": "Name",
+          "target_sensor": "Temperature sensor",
+          "heater": "Heater",
+          "cooler": "Cooler",
+          "fan": "Fan",
+          "dryer": "Dryer",
+          "target_humidity_sensor": "Humidity sensor"
+        },
+        "data_description": {
+          "target_sensor": "The current temperature the thermostat acts on.",
+          "heater": "Switched on to heat.",
+          "cooler": "Switched on to cool.",
+          "fan": "Runs in Fan only mode.",
+          "dryer": "Runs in Dry mode.",
+          "target_humidity_sensor": "Optional. Only displayed as the current humidity; it doesn't affect control."
+        }
+      },
+      "behavior": {
+        "title": "How the devices work",
+        "data": {
+          "enable_heat_cool": "Heat/cool mode",
+          "fan_behavior": "Fan behavior",
+          "dryer_behavior": "Dryer behavior",
+          "reverse_cycle": "Reverse-cycle devices"
+        },
+        "data_description": {
+          "enable_heat_cool": "Adds a mode that keeps the temperature within a range: heating below it, cooling above it.",
+          "fan_behavior": "In Fan only mode, run all the time, or work around the target like a cooler or a heater.",
+          "dryer_behavior": "In Dry mode, run all the time, or work around the target like a cooler or a heater.",
+          "reverse_cycle": "Devices that are really one unit switching modes, such as an air conditioner controlled through template switches. When one takes over from another on a mode change, the old one isn't switched off first, so the unit changes mode without powering off."
+        }
+      },
+      "settings": {
+        "title": "Temperatures and timing",
+        "data": {
+          "cold_tolerance": "Cold tolerance",
+          "hot_tolerance": "Hot tolerance",
+          "target_temp": "Starting target temperature",
+          "target_temp_low": "Starting low target",
+          "target_temp_high": "Starting high target",
+          "min_temp": "Minimum target temperature",
+          "max_temp": "Maximum target temperature",
+          "min_cycle_duration": "Minimum run time",
+          "keep_alive": "Keep-alive interval",
+          "initial_hvac_mode": "Mode on first start",
+          "precision": "Precision",
+          "target_temp_step": "Target step"
+        },
+        "data_description": {
+          "cold_tolerance": "How far below the target the temperature must drop before heating starts, and before cooling stops. With a target of 22 and 0.5, heating starts at 21.5.",
+          "hot_tolerance": "How far above the target the temperature must rise before cooling starts, and before heating stops. With a target of 22 and 0.5, heating stops at 22.5.",
+          "target_temp": "Used until you set a target on the thermostat.",
+          "target_temp_low": "Heat/cool range used until you set one on the thermostat.",
+          "target_temp_high": "Heat/cool range used until you set one on the thermostat.",
+          "min_temp": "Lowest target you can set. Defaults to 7 °C (45 °F).",
+          "max_temp": "Highest target you can set. Defaults to 35 °C (95 °F).",
+          "min_cycle_duration": "Once a device switches on or off, how long it stays that way before switching again. Protects compressors.",
+          "keep_alive": "Repeat the current on/off command this often, for devices that can lose state, such as IR or RF.",
+          "initial_hvac_mode": "The mode to start in the very first time. After that, the last mode is restored.",
+          "precision": "Precision of the displayed temperature.",
+          "target_temp_step": "Step for changing the target. Defaults to the precision."
+        }
+      },
+      "presets": {
+        "title": "Away and consent",
+        "data": {
+          "away_temp": "Away temperature",
+          "away_temp_heater": "Away temperature for heating",
+          "away_temp_cooler": "Away temperature for cooling",
+          "consent_entity": "Consent entity"
+        },
+        "data_description": {
+          "away_temp": "Target while the Away preset is on. Setting any away temperature adds the Away preset.",
+          "away_temp_heater": "Replaces the away temperature in Heat mode, and for the low end of the range in Heat/cool.",
+          "away_temp_cooler": "Replaces the away temperature in Cool mode, and for the high end of the range in Heat/cool.",
+          "consent_entity": "While this entity isn't on (for example a calendar, schedule or input boolean), every device is kept off. The mode is kept."
+        }
+      }
+    },
+    "error": {
+      "no_devices": "Choose at least one device: a heater, cooler, fan or dryer.",
+      "min_max_temp": "The minimum target temperature must be below the maximum.",
+      "target_range": "The low target must not be above the high target.",
+      "zero_duration": "Durations must be longer than zero."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Thermostat options",
+        "menu_options": {
+          "devices": "Sensor and devices",
+          "behavior": "How the devices work",
+          "settings": "Temperatures and timing",
+          "presets": "Away and consent"
+        }
+      },
+      "devices": {
+        "title": "Sensor and devices",
+        "description": "Each device adds a mode: a heater adds Heat, a cooler adds Cool, a fan adds Fan only and a dryer adds Dry. A heater plus a cooler can also offer Heat/cool. Devices can be switches, input booleans, fans, lights, groups or dehumidifiers.",
+        "data": {
+          "target_sensor": "Temperature sensor",
+          "heater": "Heater",
+          "cooler": "Cooler",
+          "fan": "Fan",
+          "dryer": "Dryer",
+          "target_humidity_sensor": "Humidity sensor"
+        },
+        "data_description": {
+          "target_sensor": "The current temperature the thermostat acts on.",
+          "heater": "Switched on to heat.",
+          "cooler": "Switched on to cool.",
+          "fan": "Runs in Fan only mode.",
+          "dryer": "Runs in Dry mode.",
+          "target_humidity_sensor": "Optional. Only displayed as the current humidity; it doesn't affect control."
+        }
+      },
+      "behavior": {
+        "title": "How the devices work",
+        "data": {
+          "enable_heat_cool": "Heat/cool mode",
+          "fan_behavior": "Fan behavior",
+          "dryer_behavior": "Dryer behavior",
+          "reverse_cycle": "Reverse-cycle devices"
+        },
+        "data_description": {
+          "enable_heat_cool": "Adds a mode that keeps the temperature within a range: heating below it, cooling above it.",
+          "fan_behavior": "In Fan only mode, run all the time, or work around the target like a cooler or a heater.",
+          "dryer_behavior": "In Dry mode, run all the time, or work around the target like a cooler or a heater.",
+          "reverse_cycle": "Devices that are really one unit switching modes, such as an air conditioner controlled through template switches. When one takes over from another on a mode change, the old one isn't switched off first, so the unit changes mode without powering off."
+        }
+      },
+      "settings": {
+        "title": "Temperatures and timing",
+        "data": {
+          "cold_tolerance": "Cold tolerance",
+          "hot_tolerance": "Hot tolerance",
+          "target_temp": "Starting target temperature",
+          "target_temp_low": "Starting low target",
+          "target_temp_high": "Starting high target",
+          "min_temp": "Minimum target temperature",
+          "max_temp": "Maximum target temperature",
+          "min_cycle_duration": "Minimum run time",
+          "keep_alive": "Keep-alive interval",
+          "initial_hvac_mode": "Mode on first start",
+          "precision": "Precision",
+          "target_temp_step": "Target step"
+        },
+        "data_description": {
+          "cold_tolerance": "How far below the target the temperature must drop before heating starts, and before cooling stops. With a target of 22 and 0.5, heating starts at 21.5.",
+          "hot_tolerance": "How far above the target the temperature must rise before cooling starts, and before heating stops. With a target of 22 and 0.5, heating stops at 22.5.",
+          "target_temp": "Used until you set a target on the thermostat.",
+          "target_temp_low": "Heat/cool range used until you set one on the thermostat.",
+          "target_temp_high": "Heat/cool range used until you set one on the thermostat.",
+          "min_temp": "Lowest target you can set. Defaults to 7 °C (45 °F).",
+          "max_temp": "Highest target you can set. Defaults to 35 °C (95 °F).",
+          "min_cycle_duration": "Once a device switches on or off, how long it stays that way before switching again. Protects compressors.",
+          "keep_alive": "Repeat the current on/off command this often, for devices that can lose state, such as IR or RF.",
+          "initial_hvac_mode": "The mode to start in the very first time. After that, the last mode is restored.",
+          "precision": "Precision of the displayed temperature.",
+          "target_temp_step": "Step for changing the target. Defaults to the precision."
+        }
+      },
+      "presets": {
+        "title": "Away and consent",
+        "data": {
+          "away_temp": "Away temperature",
+          "away_temp_heater": "Away temperature for heating",
+          "away_temp_cooler": "Away temperature for cooling",
+          "consent_entity": "Consent entity"
+        },
+        "data_description": {
+          "away_temp": "Target while the Away preset is on. Setting any away temperature adds the Away preset.",
+          "away_temp_heater": "Replaces the away temperature in Heat mode, and for the low end of the range in Heat/cool.",
+          "away_temp_cooler": "Replaces the away temperature in Cool mode, and for the high end of the range in Heat/cool.",
+          "consent_entity": "While this entity isn't on (for example a calendar, schedule or input boolean), every device is kept off. The mode is kept."
+        }
+      }
+    },
+    "error": {
+      "no_devices": "Choose at least one device: a heater, cooler, fan or dryer.",
+      "min_max_temp": "The minimum target temperature must be below the maximum.",
+      "target_range": "The low target must not be above the high target.",
+      "zero_duration": "Durations must be longer than zero."
+    }
+  },
+  "selector": {
+    "behavior": {
+      "options": {
+        "cooler": "Like a cooler: runs when it's too warm",
+        "heater": "Like a heater: runs when it's too cold",
+        "neutral": "Always on in its mode"
+      }
+    },
+    "device": {
+      "options": {
+        "heater": "Heater",
+        "cooler": "Cooler",
+        "fan": "Fan",
+        "dryer": "Dryer"
+      }
+    },
+    "hvac_mode": {
+      "options": {
+        "off": "Off",
+        "heat": "Heat",
+        "cool": "Cool",
+        "heat_cool": "Heat/cool",
+        "fan_only": "Fan only",
+        "dry": "Dry"
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_hvac_mode": {
+      "message": "{entity_id} doesn't support the {hvac_mode} mode. Supported modes: {modes}."
+    },
+    "unsupported_preset": {
+      "message": "{entity_id} doesn't support the {preset} preset. Supported presets: {presets}."
+    },
+    "inverted_range": {
+      "message": "The low target ({low}) must not be above the high target ({high})."
+    }
+  },
+  "services": {
+    "reload": {
+      "name": "Reload",
+      "description": "Reloads all thermostats set up in YAML."
+    }
+  }
+}

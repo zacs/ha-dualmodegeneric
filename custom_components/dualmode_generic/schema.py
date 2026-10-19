@@ -58,8 +58,9 @@ _LOGGER = logging.getLogger(__name__)
 BEHAVIORS = [behavior.value for behavior in Behavior]
 PRECISIONS = [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
 
-# Unchanged since 0.2.x: every key existing configurations use stays valid.
-PLATFORM_SCHEMA = CLIMATE_PLATFORM_SCHEMA.extend(
+# Shared by YAML and UI-created thermostats. Every key existing YAML
+# configurations use since 0.2.x stays valid.
+COMMON_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_HEATER): cv.entity_id,
         vol.Optional(CONF_COOLER): cv.entity_id,
@@ -95,11 +96,14 @@ PLATFORM_SCHEMA = CLIMATE_PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_AWAY_TEMP): vol.Coerce(float),
         vol.Optional(CONF_AWAY_TEMP_HEATER): vol.Coerce(float),
         vol.Optional(CONF_AWAY_TEMP_COOLER): vol.Coerce(float),
-        vol.Optional(CONF_PRECISION): vol.In(PRECISIONS),
-        vol.Optional(CONF_TEMP_STEP): vol.In(PRECISIONS),
+        # The UI stores these as strings.
+        vol.Optional(CONF_PRECISION): vol.All(vol.Coerce(float), vol.In(PRECISIONS)),
+        vol.Optional(CONF_TEMP_STEP): vol.All(vol.Coerce(float), vol.In(PRECISIONS)),
         vol.Optional(CONF_UNIQUE_ID): cv.string,
     }
 )
+
+PLATFORM_SCHEMA = CLIMATE_PLATFORM_SCHEMA.extend(COMMON_SCHEMA.schema)
 
 
 @dataclass(frozen=True, slots=True)

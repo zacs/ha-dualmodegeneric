@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.0b2
+
+**Set up thermostats from the UI.** Go to *Settings → Devices & services → Helpers → Create helper → Multi-Mode Generic Thermostat*. YAML keeps working unchanged alongside it. Existing YAML thermostats aren't imported, so nothing moves unless you recreate it yourself.
+
+- Every YAML option is available in the UI, except `unique_id`, which UI thermostats don't need.
+- Fields only appear when they apply: heat/cool needs a heater and a cooler, the behavior choices need a fan or dryer, and so on.
+- To change a thermostat later, open it and select **Configure**. The options are split into four sections, and saving one reloads the thermostat.
+- Removing a device also clears the settings that only applied to it, such as its away temperature or its `reverse_cycle` entry.
+- Renaming the entity ID of a sensor or device updates the thermostat to match.
+- UI thermostats can download diagnostics, which show the configuration and the current state of every sensor and device. Please attach them to issues.
+
+Also new:
+- Errors from `climate.set_hvac_mode`, `set_temperature` and `set_preset_mode` are translated, and name the modes or presets that are allowed.
+- `precision` and `target_temp_step` accept quoted values in YAML, e.g. `"0.5"`.
+- The README has been rewritten, with recipes for reverse-cycle units, compressor and valve relays, and schedules.
+- The integration has its own icon.
+
 ## 1.0.0b1
 
 A rewrite of the control logic with the same YAML configuration. **No configuration changes are needed.** Every option keeps its meaning, entity IDs and unique IDs are unchanged, and the first restart after upgrading restores your mode, targets and preset.

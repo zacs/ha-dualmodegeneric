@@ -2,10 +2,12 @@
     "domain": "dualmode_generic",
     "name": "Multi-Mode Generic Thermostat",
     "codeowners": ["@zacs"],
+    "config_flow": true,
     "dependencies": [],
     "documentation": "https://github.com/zacs/ha-dualmodegeneric",
+    "integration_type": "helper",
     "iot_class": "local_polling",
     "issue_tracker": "https://github.com/zacs/ha-dualmodegeneric/issues",
     "requirements": [],
-    "version": "1.0.0b1"
+    "version": "1.0.0b2"
 }

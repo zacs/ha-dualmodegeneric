@@ -11,7 +11,7 @@ import asyncio
 import logging
 import math
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, Self
 
@@ -27,6 +27,7 @@ from homeassistant.components.climate import (
     HVACAction,
     HVACMode,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_TEMPERATURE,
@@ -51,7 +52,10 @@ from homeassistant.core import (
     DOMAIN as HOMEASSISTANT_DOMAIN,
 )
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import (
+    AddConfigEntryEntitiesCallback,
+    AddEntitiesCallback,
+)
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_state_change_event,
@@ -66,7 +70,7 @@ from homeassistant.util import dt as dt_util
 from . import schema
 from .const import DEFAULT_RANGE_OFFSET, DOMAIN, PLATFORMS, Role
 from .controller import MODE_ROLES, Demand, Snapshot, closer_role, decide, role_demand
-from .schema import PresetTemperatures, ThermostatConfig
+from .schema import COMMON_SCHEMA, PresetTemperatures, ThermostatConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -111,6 +115,23 @@ async def async_setup_platform(
         [
             DualModeGenericThermostat(
                 ThermostatConfig.from_yaml(config), hass.config.units.temperature_unit
+            )
+        ]
+    )
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Set up a thermostat created in the UI."""
+    config = ThermostatConfig.from_yaml(COMMON_SCHEMA(dict(entry.options)))
+    async_add_entities(
+        [
+            DualModeGenericThermostat(
+                replace(config, unique_id=entry.entry_id),
+                hass.config.units.temperature_unit,
             )
         ]
     )
@@ -458,8 +479,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         mode = self._valid_mode(hvac_mode)
         if mode is None:
             raise ServiceValidationError(
-                f"{self.entity_id} doesn't support hvac mode {hvac_mode}; "
-                f"supported: {', '.join(self.hvac_modes)}"
+                translation_domain=DOMAIN,
+                translation_key="unsupported_hvac_mode",
+                translation_placeholders={
+                    "entity_id": self.entity_id,
+                    "hvac_mode": str(hvac_mode),
+                    "modes": ", ".join(self.hvac_modes),
+                },
             )
         previous = self._hvac_mode
         self._hvac_mode = mode
@@ -483,7 +509,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
         if low is not None and high is not None and low > high:
             raise ServiceValidationError(
-                f"target_temp_low ({low}) must not be above target_temp_high ({high})"
+                translation_domain=DOMAIN,
+                translation_key="inverted_range",
+                translation_placeholders={"low": str(low), "high": str(high)},
             )
         # A mode given with the temperature takes effect first, so the target
         # links to the new mode, and both are acted on together.
@@ -526,8 +554,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         """Select a preset, or return to the saved targets with 'none'."""
         if preset_mode != PRESET_NONE and preset_mode not in self._presets:
             raise ServiceValidationError(
-                f"{self.entity_id} doesn't support preset {preset_mode}; "
-                f"supported: {', '.join(self.preset_modes or [])}"
+                translation_domain=DOMAIN,
+                translation_key="unsupported_preset",
+                translation_placeholders={
+                    "entity_id": self.entity_id,
+                    "preset": preset_mode,
+                    "presets": ", ".join(self.preset_modes or []),
+                },
             )
         if preset_mode == self._preset:
             return
