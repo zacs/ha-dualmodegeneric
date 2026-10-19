@@ -414,6 +414,7 @@ def _forget_hidden(options: dict[str, Any]) -> None:
         options[CONF_FAN_WITH] = fan_with
     else:
         options.pop(CONF_FAN_WITH, None)
+    if not followable:
         options.pop(CONF_FAN_OFF_DELAY, None)
 
 

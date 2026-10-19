@@ -11,6 +11,7 @@ from .common import (
     CONSENT,
     FAN,
     HEATER,
+    ServiceCallRecorder,
     async_call,
     async_set_temperature,
     async_setup_restored,
@@ -20,6 +21,8 @@ from .common import (
     thermostat,
 )
 
+RF_HEATER = "switch.rf_heater"
+RF_FAN = "switch.rf_fan"
 CONFIG = {
     "fan": FAN,
     "fan_with": "heater",
@@ -188,3 +191,124 @@ async def test_fan_mode_change_doesnt_skip_min_cycle(
 
     await async_call(hass, "set_fan_mode", fan_mode="off")
     assert devices_on(hass) == {"heater"}
+
+
+# Found in review.
+
+
+async def test_off_delay_not_replayed_after_off_mode(hass: HomeAssistant) -> None:
+    """A fan that followed the heater before off doesn't run its delay on returning to heat."""
+    await async_setup_thermostat(hass, temperature=21, fan_off_delay={"minutes": 3}, **CONFIG)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_hvac_mode", hvac_mode="off")
+    await async_set_temperature(hass, 23)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    assert devices_on(hass) == set()
+
+
+async def test_off_delay_not_replayed_after_consent(hass: HomeAssistant) -> None:
+    """Nor after consent was revoked and granted again."""
+    await async_setup_thermostat(
+        hass, temperature=21, fan_off_delay={"minutes": 3}, consent_entity=CONSENT, **CONFIG
+    )
+    await async_toggle(hass, CONSENT, True)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_toggle(hass, CONSENT, False)
+    await async_set_temperature(hass, 23)
+    await async_toggle(hass, CONSENT, True)
+    assert devices_on(hass) == set()
+
+
+async def test_off_delay_not_replayed_after_fan_mode_off(hass: HomeAssistant) -> None:
+    """Nor after the fan mode was off while the heater stopped."""
+    await async_setup_thermostat(hass, temperature=21, fan_off_delay={"minutes": 3}, **CONFIG)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_fan_mode", fan_mode="off")
+    await async_set_temperature(hass, 23)
+    await async_call(hass, "set_fan_mode", fan_mode="auto")
+    assert devices_on(hass) == set()
+
+
+async def test_fan_starts_with_heater_despite_own_min_cycle(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """A heater that needs airflow never runs without its fan.
+
+    With fan_off_delay the fan stops later than the heater, so the fan's own
+    min_cycle_duration would otherwise hold it off after the heater restarts.
+    """
+    await async_setup_thermostat(
+        hass,
+        temperature=21,
+        fan_off_delay={"minutes": 3},
+        min_cycle_duration={"minutes": 10},
+        **CONFIG,
+    )
+    freezer.tick(timedelta(minutes=11))
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    freezer.tick(timedelta(minutes=11))
+    await async_set_temperature(hass, 23)
+    freezer.tick(timedelta(minutes=3, seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert devices_on(hass) == set()
+
+    freezer.tick(timedelta(minutes=7))  # the heater may start; the fan's own timer still runs
+    await async_set_temperature(hass, 21)
+    assert devices_on(hass) == {"heater", "fan"}
+
+
+async def test_mode_change_doesnt_repeat_turn_off(hass: HomeAssistant) -> None:
+    """The fan pass doesn't resend an off still on its way to another device."""
+    hass.states.async_set(RF_HEATER, "off")
+    await async_setup_thermostat(
+        hass, temperature=18, heater=RF_HEATER, fan=FAN, fan_with="heater, cooler", target_temp=22
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    hass.states.async_set(RF_HEATER, "on")
+    await hass.async_block_till_done()
+    recorder = ServiceCallRecorder(hass)
+    await async_call(hass, "set_hvac_mode", hvac_mode="cool")
+    assert recorder.calls.count(("turn_off", RF_HEATER)) == 1
+
+    # Changing the fan mode only acts on the fan.
+    recorder.clear()
+    await async_call(hass, "set_fan_mode", fan_mode="on")
+    assert ("turn_off", RF_HEATER) not in recorder.calls
+
+
+async def test_fan_released_while_unavailable(hass: HomeAssistant) -> None:
+    """A fan let go while unavailable is turned off when it comes back on."""
+    hass.states.async_set(RF_FAN, "off")
+    await async_setup_thermostat(
+        hass, temperature=23, fan=RF_FAN, fan_with="heater", target_temp=22
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_fan_mode", fan_mode="on")
+    hass.states.async_set(RF_FAN, "on")
+    hass.states.async_set(RF_FAN, "unavailable")
+    await hass.async_block_till_done()
+    await async_call(hass, "set_fan_mode", fan_mode="off")
+    recorder = ServiceCallRecorder(hass)
+    hass.states.async_set(RF_FAN, "on")
+    await hass.async_block_till_done()
+    assert recorder.calls == [("turn_off", RF_FAN)]
+
+
+async def test_fan_released_lost_turn_off_retried(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """A turn_off the fan missed is sent again."""
+    hass.states.async_set(RF_FAN, "off")
+    await async_setup_thermostat(
+        hass, temperature=23, fan=RF_FAN, fan_with="heater", target_temp=22
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_fan_mode", fan_mode="on")
+    hass.states.async_set(RF_FAN, "on")
+    await hass.async_block_till_done()
+    recorder = ServiceCallRecorder(hass)
+    await async_call(hass, "set_fan_mode", fan_mode="off")  # the fan misses it
+    freezer.tick(timedelta(seconds=11))
+    await async_set_temperature(hass, 23.1)
+    assert recorder.calls == [("turn_off", RF_FAN)] * 2

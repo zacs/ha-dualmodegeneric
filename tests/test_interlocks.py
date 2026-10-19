@@ -219,3 +219,29 @@ async def test_no_water_attributes_without_guard(hass: HomeAssistant) -> None:
     """The water attributes only appear when the guard is configured."""
     await async_setup_thermostat(hass)
     assert "water_temperature" not in thermostat(hass).attributes
+
+
+async def test_tamper_clearing_respects_min_cycle(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """A window flapping shut doesn't restart the compressor within min_cycle_duration."""
+    hass.states.async_set(WINDOW, "off")
+    await async_setup_thermostat(
+        hass,
+        temperature=26,
+        target_temp=22,
+        tamper_entity=WINDOW,
+        min_cycle_duration={"minutes": 10},
+    )
+    freezer.tick(timedelta(minutes=11))
+    await async_call(hass, "set_hvac_mode", hvac_mode="cool")
+    freezer.tick(timedelta(minutes=11))
+    await _set(hass, WINDOW, "on")
+    assert devices_on(hass) == set()
+
+    freezer.tick(timedelta(seconds=20))
+    await _set(hass, WINDOW, "off")
+    assert devices_on(hass) == set()
+    freezer.tick(timedelta(minutes=10))
+    await async_set_temperature(hass, 26.1)
+    assert devices_on(hass) == {"cooler"}

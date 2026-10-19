@@ -11,6 +11,11 @@ New options, all optional and available in the UI and in YAML. Existing configur
 - **`tamper_entity`:** while it's on, everything is kept off, like consent but the other way round. Unavailable doesn't block. Use it for window sensors.
 - **Water temperature guard** for hydronic systems: heating waits until the supply water is hot enough, cooling until it's cold enough. Uses the option names from #88, so its users can switch over.
 
+Fixes to earlier behavior:
+- Granting consent no longer skips `min_cycle_duration`, so a consent entity that flaps can't short-cycle a compressor. Revoking it still stops everything at once.
+- A preset that has no temperature for the current mode now uses your own target. With only `away_temp_heater`, switching to cool while away used to cool to the away heating temperature.
+- A device that briefly goes unavailable and comes back in the same state no longer restarts its `min_cycle_duration`.
+
 UI:
 - A new **Interlocks** step holds consent, tamper and the water guard. **Away and consent** became **Presets**.
 - Presets, the separate tolerances and the water guard are collapsible sections.

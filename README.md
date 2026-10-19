@@ -76,7 +76,7 @@ After editing YAML, call the `dualmode_generic.reload` action to apply changes w
 | `keep_alive` | – | Repeat the current command this often, for devices that can lose state. |
 | `initial_hvac_mode` | `off` | Mode on the very first start. Afterwards the last mode is restored. |
 | `away_temp`, `comfort_temp`, `eco_temp`, `home_temp`, `sleep_temp`, `activity_temp` | – | Target for each preset. Setting any of a preset's temperatures adds the preset. |
-| `away_temp_heater`, `away_temp_cooler` (and the same for every preset) | – | The preset's targets for heating and cooling. In Heat/cool they set the low and high ends of the range. |
+| `away_temp_heater`, `away_temp_cooler` (and the same for every preset) | – | The preset's targets for heating and cooling. In Heat/cool they set the low and high ends of the range. Where a preset has no temperature for the mode, your own target applies. |
 | `fan_with` | – | `heater`, `cooler` or both: adds fan modes, and in Auto the fan runs whenever these devices run. See [Fan modes](#fan-modes). |
 | `fan_off_delay` | – | In Auto, the fan keeps running this long after the device stops. |
 | `consent_entity` | – | While this entity isn't `on`, every device is kept off. |
@@ -105,7 +105,7 @@ The rules worth knowing:
 - **Heater and cooler never run at the same time.** In Heat/cool, the system is idle between the two thresholds.
 - **`min_cycle_duration` applies per device**, and takes effect as soon as it has passed. Changing the mode, target or preset overrides it, because that's you asking.
 - **`max_cycle_duration` and `cycle_cooldown` apply to each device the mode runs**, as in the built-in thermostat. Changing the mode, target or preset skips the cooldown. The cooldown follows a run, not a restart of Home Assistant.
-- **Without consent, or with the tamper entity on**, every device is turned off and the mode is kept. This applies in any mode.
+- **Without consent, or with the tamper entity on**, every device is turned off at once and the mode is kept. This applies in any mode. When they clear, devices start again within `min_cycle_duration` and `cycle_cooldown`.
 - **Restarts restore everything:** mode, all targets, preset, fan mode, and the mode `climate.turn_on` returns to.
 - **Devices that misbehave are handled.**
   - Commands aren't repeated while a device hasn't reported back yet.
@@ -134,7 +134,7 @@ If something else decides the direction (a changeover valve, a seasonal setting)
 
 ### Fan modes
 Set `fan_with` to the devices the fan should run with, and the thermostat gets a fan mode selector:
-- **Auto** runs the fan whenever those devices run, plus `fan_off_delay` after they stop. Use it for a fan that spreads a space heater's warmth (#11).
+- **Auto** runs the fan whenever those devices run, plus `fan_off_delay` after they stop. Use it for a fan that spreads a space heater's warmth (#11). The fan always starts with them, even within its own `min_cycle_duration`.
 - **On** runs the fan all the time, in every mode but Off. Use it for continuous circulation while a compressor cycles.
 - **Off** leaves the fan alone, as without `fan_with`.
 

@@ -3,12 +3,17 @@
 from datetime import timedelta
 
 from freezegun.api import FrozenDateTimeFactory
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_START
+from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from pytest_homeassistant_custom_component.common import (
+    async_fire_time_changed,
+    mock_restore_cache,
+)
 
 from .common import (
     COOLER,
+    ENTITY,
     HEATER,
     ServiceCallRecorder,
     async_call,
@@ -19,6 +24,7 @@ from .common import (
     is_on,
 )
 
+RF_HEATER = "switch.rf_heater"
 CONFIG = {
     "target_temp": 22,
     "cold_tolerance": 0.5,
@@ -238,4 +244,70 @@ async def test_cooldown_doesnt_hold_up_startup(hass: HomeAssistant) -> None:
     await async_setup_restored(
         hass, "heat", temperature=20, target_temp=22, cycle_cooldown={"minutes": 10}
     )
+    assert is_on(hass, HEATER)
+
+
+async def test_restart_after_max_cycle_without_new_reading(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """After resting, a device stopped by max_cycle_duration starts again on its own."""
+    await async_setup_thermostat(
+        hass,
+        temperature=18,
+        target_temp=22,
+        max_cycle_duration={"minutes": 30},
+        cycle_cooldown={"minutes": 10},
+        min_cycle_duration={"minutes": 5},
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    freezer.tick(timedelta(minutes=30, seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert not is_on(hass, HEATER)
+
+    freezer.tick(timedelta(minutes=10, seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert is_on(hass, HEATER)
+
+
+async def test_unavailable_blip_doesnt_restart_clocks(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """A device dropping off the network for a moment doesn't restart its max_cycle clock."""
+    hass.states.async_set(RF_HEATER, "off")
+    await async_setup_thermostat(
+        hass, temperature=18, heater=RF_HEATER, target_temp=22, max_cycle_duration={"minutes": 30}
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    hass.states.async_set(RF_HEATER, "on")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(minutes=20))
+    hass.states.async_set(RF_HEATER, "unavailable")
+    await hass.async_block_till_done()
+    hass.states.async_set(RF_HEATER, "on")
+    await hass.async_block_till_done()
+    recorder = ServiceCallRecorder(hass)
+    freezer.tick(timedelta(minutes=10, seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert recorder.calls == [("turn_off", RF_HEATER)]
+
+
+async def test_cooldown_ignores_changes_during_startup(hass: HomeAssistant) -> None:
+    """A device reported on, then off, while HA starts doesn't start a cooldown."""
+    mock_restore_cache(hass, [State(ENTITY, "heat", {})])
+    hass.set_state(CoreState.starting)
+    await async_setup_thermostat(
+        hass, temperature=23, target_temp=22, cycle_cooldown={"minutes": 10}
+    )
+    # A restored state giving way to the real one.
+    hass.states.async_set(HEATER, "on")
+    hass.states.async_set(HEATER, "off")
+    await hass.async_block_till_done()
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    await hass.async_block_till_done()
+
+    await async_set_temperature(hass, 20)
     assert is_on(hass, HEATER)

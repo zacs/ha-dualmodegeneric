@@ -1,14 +1,19 @@
 """Setting up and editing thermostats from the UI."""
 
+import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import voluptuous as vol
 from homeassistant.components.climate import HVACMode
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, section
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.dualmode_generic import config_flow
 
 from .common import COOLER, DOMAIN, DRYER, FAN, HEATER, SENSOR, async_setup_devices
 
@@ -490,3 +495,27 @@ async def test_removing_cooler_forgets_cooling_settings(hass: HomeAssistant) -> 
         assert key not in entry.options
     assert entry.options["eco_temp_heater"] == 18
     assert entry.options["water_sensor"] == "sensor.water"
+
+
+async def test_fan_off_delay_kept_without_fan_with(hass: HomeAssistant) -> None:
+    """A run-on time set before choosing what the fan runs with isn't thrown away."""
+    entry = await _entry(hass, fan=FAN, fan_behavior="neutral")
+    result = await _options_step(hass, entry, "behavior")
+    delay = {"hours": 0, "minutes": 2, "seconds": 0}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"fan_behavior": "neutral", "fan_off_delay": delay}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options["fan_off_delay"] == delay
+
+
+def test_sections_have_no_default() -> None:
+    """The frontend shows a section's default instead of the saved values inside it."""
+    handler = SimpleNamespace(options={"heater": "a", "cooler": "b", "fan": "c"})
+    for flow in (config_flow.CONFIG_FLOW, config_flow.OPTIONS_FLOW):
+        for step in flow.values():
+            if (build := getattr(step, "schema", None)) is None or isinstance(build, vol.Schema):
+                continue
+            for key, value in asyncio.run(build(handler)).schema.items():
+                if isinstance(value, section):
+                    assert key.default is vol.UNDEFINED, key

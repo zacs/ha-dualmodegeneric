@@ -44,6 +44,7 @@ from homeassistant.const import (
 from homeassistant.core import (
     CALLBACK_TYPE,
     Context,
+    CoreState,
     Event,
     EventStateChangedData,
     HassJob,
@@ -242,6 +243,9 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         self._owners: dict[str, Role] = {}
         self._pending: dict[str, tuple[bool, datetime]] = {}
         self._last_toggled: dict[str, datetime] = {}
+        # Last on/off state each device reported, so dropping off the network
+        # and coming back in the same state doesn't count as a change.
+        self._known: dict[str, bool] = {}
         # When each device last stopped running; cycle_cooldown counts from it,
         # so (as in the built-in thermostat) it doesn't hold up a restart.
         self._stopped: dict[str, datetime] = {}
@@ -323,6 +327,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         for entity_id in self._entity_roles:
             if state := self.hass.states.get(entity_id):
                 self._last_toggled[entity_id] = state.last_changed
+                if state.state in (STATE_ON, STATE_OFF):
+                    self._known[entity_id] = state.state == STATE_ON
+        # Changes while Home Assistant was starting aren't runs to rest after.
+        self._stopped.clear()
         self._started = True
         # Without consent everything starts off, whatever the mode (as in 0.2.x).
         await self._async_control(gate_changed=not self._gate_open)
@@ -678,9 +686,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             return
         if self._started:
             self.async_set_context(event.context)
-            # Closing stops every device at once, in any mode; opening acts
-            # right away.
-            await self._async_control(force=True, gate_changed=True)
+            # Closing stops every device at once, in any mode. Opening acts
+            # right away too, but within min_cycle_duration and cycle_cooldown:
+            # a window sensor flapping mustn't short-cycle a compressor.
+            await self._async_control(gate_changed=True)
         self.async_write_ha_state()
 
     async def _async_water_changed(self, event: Event[EventStateChangedData]) -> None:
@@ -710,16 +719,20 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         changed = old_state is None or old_state.state != new_state.state
         if changed:
             self._replaced.discard(entity_id)
-            # min_cycle_duration counts from real changes, not from commands,
-            # so a command the device never acted on is retried promptly.
-            if new_state.state in (STATE_ON, STATE_OFF):
-                self._last_toggled[entity_id] = new_state.last_changed
             if new_state.state == STATE_OFF:
                 self._owners.pop(entity_id, None)
                 self._off_owed.discard(entity_id)
-                if old_state is not None and old_state.state == STATE_ON:
-                    self._stopped[entity_id] = new_state.last_changed
-            elif new_state.state == STATE_ON and (max_cycle := self._config.max_cycle_duration):
+        if reached is not None and self._known.get(entity_id) is not reached:
+            # The cycle timings count from real changes, not from commands, so
+            # a command the device never acted on is retried promptly.
+            was_on = self._known.get(entity_id)
+            self._known[entity_id] = reached
+            self._last_toggled[entity_id] = new_state.last_changed
+            # While Home Assistant starts, restored states give way to real
+            # ones; that isn't a run to rest after.
+            if was_on and not reached and self.hass.state is not CoreState.starting:
+                self._stopped[entity_id] = new_state.last_changed
+            elif reached and (max_cycle := self._config.max_cycle_duration):
                 # Check back when it's due to stop.
                 self._schedule_recheck(new_state.last_changed + max_cycle - dt_util.utcnow())
         # A device that (re)appears gets the thermostat's current decision, and
@@ -866,21 +879,21 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 urgent=urgent,
             )
             # After the other devices, so the fan follows what they really do.
-            if all_off or not gate_open:
+            if all_off or not gate_open or not self._fan_managed(mode):
+                self._fan_following = False
+                self._fan_hold_until = None
+                if fan_released and gate_open and not all_off:
+                    await self._async_apply(
+                        {Role.FAN: False},
+                        force=True,
+                        keepalive=False,
+                        owe_offs=True,
+                        all_off=False,
+                        replaceable=frozenset(),
+                        follower=True,
+                    )
                 return
-            if fan_released:
-                await self._async_apply(
-                    {Role.FAN: False},
-                    force=True,
-                    keepalive=False,
-                    owe_offs=False,
-                    all_off=False,
-                    replaceable=frozenset(),
-                )
-            elif self._fan_managed(mode):
-                await self._async_apply_fan(
-                    mode, now, force=force or fan_changed, keepalive=keepalive
-                )
+            await self._async_apply_fan(mode, now, force=force or fan_changed, keepalive=keepalive)
 
     async def _async_follow_fan(self) -> None:
         """Update the fan after a device it follows was switched by someone else."""
@@ -893,8 +906,6 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
     async def _async_apply_fan(
         self, mode: HVACMode, now: datetime, *, force: bool, keepalive: bool
     ) -> None:
-        # max_cycle_duration and cycle_cooldown are for the mode's own devices;
-        # a fan running alongside them only follows.
         await self._async_apply(
             {Role.FAN: self._fan_wanted(mode, now)},
             force=force,
@@ -902,7 +913,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             owe_offs=False,
             all_off=False,
             replaceable=frozenset(),
-            cycle_limits=False,
+            follower=True,
         )
 
     def _fan_wanted(self, mode: HVACMode, now: datetime) -> bool:
@@ -944,6 +955,13 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                     max_cycle,
                 )
                 expired.add(entity_id)
+                # Check back when it may start again, if it's still needed.
+                rest = max(
+                    self._config.min_cycle_duration or timedelta(0),
+                    self._config.cycle_cooldown or timedelta(0),
+                )
+                if rest:
+                    self._schedule_recheck(rest)
         return expired
 
     def _snapshot(self) -> Snapshot:
@@ -979,14 +997,16 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         all_off: bool,
         replaceable: frozenset[Role],
         urgent: set[str] | None = None,
-        cycle_limits: bool = True,
+        follower: bool = False,
     ) -> None:
         """Send only the commands needed to reach the desired device states.
 
         ``all_off`` marks passes that switch everything off (off mode, no
         consent); devices that handed over are switched off then too.
         ``urgent`` devices are switched off without waiting for
-        min_cycle_duration. ``cycle_limits`` applies cycle_cooldown.
+        min_cycle_duration. A ``follower`` pass is for the fan alone: it starts
+        whenever the devices it follows need it (they may need its airflow),
+        and switch-offs owed by other devices are left to the main pass.
         """
         now = dt_util.utcnow()
         mode_entities = self._mode_entities()
@@ -999,11 +1019,12 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 wanted[entity_id] = role
             else:
                 wanted.setdefault(entity_id, None)
-        # Finish switch-offs still owed from earlier, unless the current mode
-        # now decides for that device.
-        self._off_owed -= mode_entities
-        for entity_id in self._off_owed:
-            wanted.setdefault(entity_id, None)
+        if not follower:
+            # Finish switch-offs still owed from earlier, unless the current
+            # mode now decides for that device.
+            self._off_owed -= mode_entities
+            for entity_id in self._off_owed:
+                wanted.setdefault(entity_id, None)
 
         turn_on: list[str] = []
         turn_off: list[str] = []
@@ -1045,8 +1066,10 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
                 or self._requested.get(entity_id) is on
                 or (not on and urgent is not None and entity_id in urgent)
             )
-            if not bypass and (
-                wait := self._cycle_remaining(entity_id, now, starting=on, cooldown=cycle_limits)
+            if (
+                not bypass
+                and not (follower and on)
+                and (wait := self._cycle_remaining(entity_id, now, starting=on))
             ):
                 _LOGGER.debug(
                     "%s: min_cycle_duration or cycle_cooldown keeps %s %s for %s more",
@@ -1255,7 +1278,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         return state is not None and state.state != STATE_UNAVAILABLE
 
     def _cycle_remaining(
-        self, entity_id: str, now: datetime, *, starting: bool, cooldown: bool
+        self, entity_id: str, now: datetime, *, starting: bool
     ) -> timedelta | None:
         """Return how long a device has to wait before switching, if at all.
 
@@ -1268,7 +1291,6 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
             waits.append(last + min_cycle - now)
         if (
             starting
-            and cooldown
             and (rest := self._config.cycle_cooldown)
             and (stopped := self._stopped.get(entity_id))
         ):
@@ -1323,22 +1345,31 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         return low, max(low, high)
 
     def _apply_preset(self, temps: PresetTemperatures) -> None:
-        """Apply a preset's temperatures for the current mode."""
+        """Apply a preset's temperatures for the current mode.
+
+        Where the preset has none, the targets from before any preset apply,
+        not another preset's or another mode's.
+        """
         heat = temps.heat if temps.heat is not None else temps.single
         cool = temps.cool if temps.cool is not None else temps.single
+        saved = self._saved_targets or {}
+
+        def own(key: str, current: float | None) -> float | None:
+            value = saved.get(key)
+            return current if value is None else value
+
         mode = self._hvac_mode
         if mode is HVACMode.HEAT_COOL:
-            # A plain away_temp only lowers the heating end.
-            low = heat if heat is not None else self._low
-            high = temps.cool if temps.cool is not None else self._high
+            # A plain <preset>_temp only sets the heating end.
+            low = heat if heat is not None else own("target_temp_low", self._low)
+            high = temps.cool if temps.cool is not None else own("target_temp_high", self._high)
             if low is not None and high is not None and high < low:
                 high = low
             self._low, self._high = low, high
             return
         demand = self._mode_demand(mode)
         value = {Demand.HEATING: heat, Demand.COOLING: cool}.get(demand) if demand else None
-        if value is not None:
-            self._target = value
+        self._target = value if value is not None else own("target_temp", self._target)
 
 
 def _is_known(state: State) -> bool:
