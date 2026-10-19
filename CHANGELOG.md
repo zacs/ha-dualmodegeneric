@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.0
+
+The first stable release: the thermostat rewritten for current Home Assistant, with the same YAML configuration, plus UI setup and new options. **Upgrading from 0.2.x needs no configuration changes**, and your mode, targets and preset carry over. Requires Home Assistant 2026.4 or newer.
+
+Since 0.2.x:
+- **More reliable control (1.0.0b1).** Fixes for tight heat/cool ranges, reverse-cycle mode changes, away mode, restarts, `keep_alive` and more. A few behaviors changed on purpose; see 1.0.0b1 below.
+- **UI setup (1.0.0b2)** alongside YAML, with diagnostics and an icon.
+- **New options (1.0.0b3):**
+  - fan modes;
+  - more presets;
+  - `max_cycle_duration` and `cycle_cooldown`;
+  - separate heater and cooler tolerances;
+  - `tamper_entity`;
+  - a water temperature guard.
+- **Italian translation and an MIT license (1.0.0b4).**
+
+No changes since 1.0.0b4.
+
 ## 1.0.0b4
 
 - **Italian translation** of the setup and options screens and error messages, based on @GiuseppeP96's translation in #88.
