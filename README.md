@@ -4,6 +4,8 @@ One thermostat for up to four separate devices: a **heater**, a **cooler**, a **
 
 - Each device adds a mode: a heater adds Heat, a cooler adds Cool, a fan adds Fan only and a dryer adds Dry.
 - A heater and a cooler together can also offer **Heat/cool**, which keeps the temperature within a range.
+- The fan can also run alongside the heater or cooler, with Auto and On fan modes.
+- Presets, run-time limits, consent and tamper entities, and a water temperature guard for hydronic systems.
 - Set it up from the UI or in YAML.
 
 Requires **Home Assistant 2026.4** or newer. See [CHANGELOG.md](CHANGELOG.md) for what's new.
@@ -24,9 +26,10 @@ Requires **Home Assistant 2026.4** or newer. See [CHANGELOG.md](CHANGELOG.md) fo
 ### From the UI
 Go to **Settings → Devices & services → Helpers → Create helper → Multi-Mode Generic Thermostat**. The steps are:
 1. **Sensor and devices:** the temperature sensor and the devices to control. Devices can be switches, input booleans, fans, lights, groups or dehumidifiers.
-2. **How the devices work:** heat/cool mode, fan and dryer behavior, and reverse-cycle devices. This step only appears when it applies.
-3. **Temperatures and timing:** tolerances, limits, minimum run time and keep-alive.
-4. **Away and consent.**
+2. **How the devices work:** heat/cool mode, fan and dryer behavior, reverse-cycle devices, and running the fan alongside the heater or cooler. This step only appears when it applies.
+3. **Temperatures and timing:** tolerances, limits, run times and keep-alive.
+4. **Presets.**
+5. **Interlocks:** consent, tamper and the water temperature guard.
 
 To change anything later, open the helper and select **Configure**.
 
@@ -61,17 +64,27 @@ After editing YAML, call the `dualmode_generic.reload` action to apply changes w
 | `enable_heat_cool` | `false` | Adds Heat/cool mode. Needs both a heater and a cooler. |
 | `cold_tolerance` | 0.3 | Heating starts at `target − cold_tolerance`; cooling stops there too. |
 | `hot_tolerance` | 0.3 | Cooling starts at `target + hot_tolerance`; heating stops there too. |
+| `heater_cold_tolerance`, `heater_hot_tolerance`, `cooler_cold_tolerance`, `cooler_hot_tolerance` | the shared ones | Tolerances for just the heater or the cooler. `heater_hot_tolerance: 0` stops heating right at the target. |
 | `target_temp` | – | Starting target, used until you set one. |
 | `target_temp_low`, `target_temp_high` | – | Starting Heat/cool range. |
 | `min_temp`, `max_temp` | 7 °C, 35 °C | Limits for the target. |
 | `fan_behavior`, `dryer_behavior` | `neutral` | `neutral`: always on in its mode. `cooler`: runs when too warm. `heater`: runs when too cold. |
 | `reverse_cycle` | – | Devices that are one unit switching modes, e.g. `heater, cooler`. See [Reverse-cycle air conditioners](#reverse-cycle-air-conditioners). |
 | `min_cycle_duration` | – | Once a device switches on or off, it stays that way at least this long. |
+| `max_cycle_duration` | – | A device that has run this long is stopped, even if it's still needed. |
+| `cycle_cooldown` | – | After a device stops, it rests this long before starting again. |
 | `keep_alive` | – | Repeat the current command this often, for devices that can lose state. |
 | `initial_hvac_mode` | `off` | Mode on the very first start. Afterwards the last mode is restored. |
-| `away_temp` | – | Target for the Away preset. Setting any away temperature adds the preset. |
-| `away_temp_heater`, `away_temp_cooler` | – | Away targets for heating and cooling. In Heat/cool they set the low and high ends of the range. |
+| `away_temp`, `comfort_temp`, `eco_temp`, `home_temp`, `sleep_temp`, `activity_temp` | – | Target for each preset. Setting any of a preset's temperatures adds the preset. |
+| `away_temp_heater`, `away_temp_cooler` (and the same for every preset) | – | The preset's targets for heating and cooling. In Heat/cool they set the low and high ends of the range. |
+| `fan_with` | – | `heater`, `cooler` or both: adds fan modes, and in Auto the fan runs whenever these devices run. See [Fan modes](#fan-modes). |
+| `fan_off_delay` | – | In Auto, the fan keeps running this long after the device stops. |
 | `consent_entity` | – | While this entity isn't `on`, every device is kept off. |
+| `tamper_entity` | – | While this entity is `on`, every device is kept off. Unavailable doesn't block. |
+| `water_sensor` | – | Supply water temperature, for the [water guard](#hydronic-systems). |
+| `water_setpoint_heat`, `water_setpoint_cool` | – | Heating runs only while the water is at least `water_setpoint_heat − water_tolerance`; cooling only while it's at most `water_setpoint_cool + water_tolerance`. |
+| `water_setpoint_heat_entity`, `water_setpoint_cool_entity` | – | Take the setpoints from an entity instead, such as an `input_number`. |
+| `water_tolerance` | 0.3 | |
 | `target_humidity_sensor` | – | Shown as the current humidity only. |
 | `precision`, `target_temp_step` | system default | `0.1`, `0.5` or `1`. |
 
@@ -87,12 +100,13 @@ After editing YAML, call the `dualmode_generic.reload` action to apply changes w
 | Off | – | never | – |
 
 The rules worth knowing:
-- **Only the current mode's device is controlled.** A fan you run yourself keeps running while heat mode cycles the heater. Changing mode turns off devices that aren't part of the new mode.
+- **Only the current mode's device is controlled**, plus the fan when a [fan mode](#fan-modes) runs it. A fan you run yourself keeps running while heat mode cycles the heater. Changing mode turns off devices that aren't part of the new mode.
 - **Off leaves your devices alone.** Switching to off turns everything off once. After that, nothing is touched except to finish switching off a device that missed it, so you can run devices by hand.
 - **Heater and cooler never run at the same time.** In Heat/cool, the system is idle between the two thresholds.
 - **`min_cycle_duration` applies per device**, and takes effect as soon as it has passed. Changing the mode, target or preset overrides it, because that's you asking.
-- **Without consent**, every device is turned off and the mode is kept. This applies in any mode.
-- **Restarts restore everything:** mode, all targets, preset, and the mode `climate.turn_on` returns to.
+- **`max_cycle_duration` and `cycle_cooldown` apply to each device the mode runs**, as in the built-in thermostat. Changing the mode, target or preset skips the cooldown. The cooldown follows a run, not a restart of Home Assistant.
+- **Without consent, or with the tamper entity on**, every device is turned off and the mode is kept. This applies in any mode.
+- **Restarts restore everything:** mode, all targets, preset, fan mode, and the mode `climate.turn_on` returns to.
 - **Devices that misbehave are handled.**
   - Commands aren't repeated while a device hasn't reported back yet.
   - Unavailable devices aren't sent commands, and get the current decision once they're back.
@@ -118,11 +132,39 @@ Don't point `heater` at a group that shares a relay with `cooler`. Create one te
 ### One relay that both heats and cools
 If something else decides the direction (a changeover valve, a seasonal setting), set `heater` and `cooler` to the same entity. The thermostat never switches it off and on just to change role, and reports heating or cooling based on which side of the range triggered it.
 
-### Continuous fan with a cycling compressor
-Switch the fan on yourself (or with an automation) and use Cool mode. The compressor cycles while the fan keeps running.
+### Fan modes
+Set `fan_with` to the devices the fan should run with, and the thermostat gets a fan mode selector:
+- **Auto** runs the fan whenever those devices run, plus `fan_off_delay` after they stop. Use it for a fan that spreads a space heater's warmth (#11).
+- **On** runs the fan all the time, in every mode but Off. Use it for continuous circulation while a compressor cycles.
+- **Off** leaves the fan alone, as without `fan_with`.
 
-### Schedules, windows and hydronic systems
-Set `consent_entity` to a schedule, a calendar, an input boolean, or a sensor that's on when the boiler is ready. The thermostat keeps everything off whenever it isn't `on`. For a window sensor, which is on while the window is open, use a template binary sensor that inverts it.
+```yaml
+fan: switch.fan
+fan_with: heater
+fan_off_delay:
+  minutes: 3
+```
+
+Fan only mode still runs the fan by itself, as set by `fan_behavior`. A fan listed in `reverse_cycle` is the same unit as the heater or cooler, so it can't use `fan_with`.
+
+### Schedules and windows
+Set `consent_entity` to a schedule, a calendar or an input boolean. The thermostat keeps everything off whenever it isn't `on`. For a window sensor, set `tamper_entity` instead: everything stays off while it's `on`.
+
+### Hydronic systems
+Heating a room with water that's still cold only blows cold air. The water guard holds back heating until the supply water is hot enough, and cooling until it's cold enough:
+
+```yaml
+water_sensor: sensor.supply_water
+water_setpoint_heat: 35
+water_setpoint_cool_entity: input_number.chilled_water_setpoint
+water_tolerance: 1
+```
+
+- Each device checks its own setpoint, so in Heat/cool the cooler can run while the heater waits.
+- A fan or dryer that acts like a heater or a cooler (`fan_behavior`, `dryer_behavior`) waits too.
+- A running device stops as soon as the water isn't ready; starting again still waits for `min_cycle_duration`.
+- Without a water reading, nothing is held back.
+- The thermostat shows `water_temperature`, `water_setpoint_heat`, `water_setpoint_cool` and `water_guard_active` as attributes.
 
 ### IR and RF devices that miss commands
 Set `keep_alive` (for example 5 minutes) to repeat the current state regularly.

@@ -182,7 +182,11 @@ def _available_modes(options: Mapping[str, Any]) -> list[str]:
 
 
 def _section(fields: dict[vol.Marker, Any], options: Mapping[str, Any]) -> section:
-    """Return a collapsible section, open when any of its options is set."""
+    """Return a collapsible section, open when any of its options is set.
+
+    Its key must have no default: the frontend would show that instead of the
+    suggested values inside. Left out, the section's options are cleared.
+    """
     keys = [str(key) for key in fields]
     return section(vol.Schema(fields), {"collapsed": not any(key in options for key in keys)})
 
@@ -211,7 +215,7 @@ async def _settings_schema(handler: SchemaCommonFlowHandler) -> vol.Schema:
         vol.Required(CONF_HOT_TOLERANCE, default=DEFAULT_TOLERANCE): _TOLERANCE,
     }
     if _heat_cool_possible(options):
-        schema[vol.Optional(TOLERANCES_SECTION, default={})] = _section(
+        schema[vol.Optional(TOLERANCES_SECTION)] = _section(
             {vol.Optional(key): _TOLERANCE for key in DEVICE_TOLERANCE_KEYS}, options
         )
     schema[vol.Optional(CONF_TARGET_TEMP)] = _TEMPERATURE
@@ -250,7 +254,7 @@ async def _presets_schema(handler: SchemaCommonFlowHandler) -> vol.Schema:
             fields[vol.Optional(heat)] = _TEMPERATURE
         if options.get(CONF_COOLER):
             fields[vol.Optional(cool)] = _TEMPERATURE
-        schema[vol.Optional(preset, default={})] = _section(fields, options)
+        schema[vol.Optional(preset)] = _section(fields, options)
     return vol.Schema(schema)
 
 
@@ -270,7 +274,7 @@ async def _interlocks_schema(handler: SchemaCommonFlowHandler) -> vol.Schema:
             fields[vol.Optional(CONF_WATER_SETPOINT_COOL)] = _TEMPERATURE
             fields[vol.Optional(CONF_WATER_SETPOINT_COOL_ENTITY)] = _SETPOINT
         fields[vol.Optional(CONF_WATER_TOLERANCE)] = _TOLERANCE
-        schema[vol.Optional(WATER_SECTION, default={})] = _section(fields, options)
+        schema[vol.Optional(WATER_SECTION)] = _section(fields, options)
     return vol.Schema(schema)
 
 
