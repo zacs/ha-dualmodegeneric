@@ -149,3 +149,36 @@ async def test_translations_load(hass: HomeAssistant) -> None:
     ):
         loaded = await async_get_translations(hass, "en", category, [DOMAIN])
         assert loaded.get(key), key
+
+
+def _leaves(tree: dict, path: str = "") -> dict[str, str]:
+    """Flatten a translation tree to {dotted.key: text}."""
+    leaves = {}
+    for key, value in tree.items():
+        if isinstance(value, dict):
+            leaves.update(_leaves(value, f"{path}{key}."))
+        else:
+            leaves[f"{path}{key}"] = value
+    return leaves
+
+
+def test_other_languages_match_english() -> None:
+    """Every translation has the same keys and placeholders as the English one."""
+    english = _leaves(TRANSLATIONS)
+    folder = Path(config_flow.__file__).parent / "translations"
+    others = [path for path in folder.glob("*.json") if path.name != "en.json"]
+    assert others
+    for path in others:
+        other = _leaves(json.loads(path.read_text()))
+        assert other.keys() == english.keys(), path.name
+        for key, text in english.items():
+            assert set(re.findall(r"{\w+}", other[key])) == set(re.findall(r"{\w+}", text)), (
+                f"{path.name}: {key}"
+            )
+
+
+async def test_italian_loads(hass: HomeAssistant) -> None:
+    """Home Assistant loads the Italian text."""
+    await _entry(hass)
+    loaded = await async_get_translations(hass, "it", "config", [DOMAIN])
+    assert loaded[f"component.{DOMAIN}.config.step.presets.sections.away.name"] == "Fuori casa"

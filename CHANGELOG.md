@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.0b4
+
+- **Italian translation** of the setup and options screens and error messages, based on @GiuseppeP96's translation in #88.
+- **Licensed under MIT.** See [LICENSE](LICENSE).
+
 ## 1.0.0b3
 
 New options, all optional and available in the UI and in YAML. Existing configurations don't change.

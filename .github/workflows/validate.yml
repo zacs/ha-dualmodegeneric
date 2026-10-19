@@ -25,5 +25,6 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # license: the repository has no LICENSE file yet.
+          # license: HACS reads it from GitHub's repository metadata, which only
+          # sees the default branch. Remove once LICENSE is on master.
           ignore: license
