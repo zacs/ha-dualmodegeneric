@@ -15,6 +15,7 @@ Also new:
 - Errors from `climate.set_hvac_mode`, `set_temperature` and `set_preset_mode` are translated, and name the modes or presets that are allowed.
 - `precision` and `target_temp_step` accept quoted values in YAML, e.g. `"0.5"`.
 - The README has been rewritten, with recipes for reverse-cycle units, compressor and valve relays, and schedules.
+- The integration has its own icon.
 
 ## 1.0.0b1
 
