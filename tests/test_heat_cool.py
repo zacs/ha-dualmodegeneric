@@ -121,3 +121,34 @@ async def test_never_heats_and_cools_at_once(hass: HomeAssistant) -> None:
     for reading in (*range(15, 30), *range(30, 14, -1)):
         await async_set_temperature(hass, reading)
         assert not (is_on(hass, HEATER) and is_on(hass, COOLER))
+
+
+async def test_heater_tolerances_override(hass: HomeAssistant) -> None:
+    """heater_hot_tolerance: 0 stops the heater right at the low end (#37, #83)."""
+    await async_setup_thermostat(hass, temperature=19, heater_hot_tolerance=0, **RANGE)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    assert devices_on(hass) == {"heater"}
+    await async_set_temperature(hass, 20)
+    assert devices_on(hass) == set()
+
+
+async def test_cooler_tolerances_override(hass: HomeAssistant) -> None:
+    """cooler_hot_tolerance moves where cooling starts; heating is unaffected."""
+    await async_setup_thermostat(hass, temperature=24.6, cooler_hot_tolerance=1, **RANGE)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    assert devices_on(hass) == set()
+    await async_set_temperature(hass, 25)
+    assert devices_on(hass) == {"cooler"}
+    await async_set_temperature(hass, 19.5)
+    assert devices_on(hass) == {"heater"}
+
+
+async def test_heater_tolerances_in_heat_mode(hass: HomeAssistant) -> None:
+    """The heater's own tolerances apply in heat mode too."""
+    await async_setup_thermostat(
+        hass, temperature=21.5, target_temp=22, heater_cold_tolerance=1, **RANGE
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    assert devices_on(hass) == set()
+    await async_set_temperature(hass, 21)
+    assert devices_on(hass) == {"heater"}

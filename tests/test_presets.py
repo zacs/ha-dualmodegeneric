@@ -91,3 +91,91 @@ async def test_any_away_temperature_enables_away(hass: HomeAssistant) -> None:
     await async_call(hass, "set_hvac_mode", hvac_mode="heat")
     await async_call(hass, "set_preset_mode", preset_mode="away")
     assert thermostat(hass).attributes["temperature"] == 16
+
+
+async def test_all_presets_in_display_order(hass: HomeAssistant) -> None:
+    """Every configured preset is offered, in the built-in thermostat's order."""
+    await async_setup_thermostat(
+        hass, target_temp=22, sleep_temp=18, away_temp=16, eco_temp_heater=19, comfort_temp=23
+    )
+    assert thermostat(hass).attributes["preset_modes"] == [
+        "none",
+        "away",
+        "comfort",
+        "eco",
+        "sleep",
+    ]
+
+
+async def test_switching_between_presets(hass: HomeAssistant) -> None:
+    """Going from one preset to another keeps the targets from before either."""
+    await async_setup_thermostat(hass, temperature=20, target_temp=22, eco_temp=19, comfort_temp=23)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_preset_mode", preset_mode="eco")
+    assert thermostat(hass).attributes["temperature"] == 19
+    assert devices_on(hass) == set()
+
+    await async_call(hass, "set_preset_mode", preset_mode="comfort")
+    assert thermostat(hass).attributes["temperature"] == 23
+    assert devices_on(hass) == {"heater"}
+
+    await async_call(hass, "set_preset_mode", preset_mode="none")
+    assert thermostat(hass).attributes["temperature"] == 22
+
+
+async def test_preset_variants_set_the_range(hass: HomeAssistant) -> None:
+    """In heat/cool, a preset's heating and cooling temperatures become the range."""
+    await async_setup_thermostat(
+        hass,
+        enable_heat_cool=True,
+        target_temp_low=20,
+        target_temp_high=24,
+        eco_temp_heater=17,
+        eco_temp_cooler=28,
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    await async_call(hass, "set_preset_mode", preset_mode="eco")
+    attributes = thermostat(hass).attributes
+    assert (attributes["target_temp_low"], attributes["target_temp_high"]) == (17, 28)
+    await async_call(hass, "set_preset_mode", preset_mode="none")
+    attributes = thermostat(hass).attributes
+    assert (attributes["target_temp_low"], attributes["target_temp_high"]) == (20, 24)
+
+
+async def test_preset_without_temperature_uses_own_target(hass: HomeAssistant) -> None:
+    """A preset with nothing for the mode uses your own target, not the previous preset's."""
+    await async_setup_thermostat(
+        hass, temperature=20, target_temp=22, eco_temp=17, comfort_temp_cooler=26
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_preset_mode", preset_mode="eco")
+    await async_call(hass, "set_preset_mode", preset_mode="comfort")
+    assert thermostat(hass).attributes["temperature"] == 22
+
+
+async def test_preset_without_cooling_uses_own_range(hass: HomeAssistant) -> None:
+    """In heat/cool, the end a preset doesn't set is your own, not the previous preset's."""
+    await async_setup_thermostat(
+        hass,
+        enable_heat_cool=True,
+        target_temp_low=20,
+        target_temp_high=24,
+        away_temp_heater=16,
+        away_temp_cooler=28,
+        eco_temp=19,
+    )
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat_cool")
+    await async_call(hass, "set_preset_mode", preset_mode="away")
+    await async_call(hass, "set_preset_mode", preset_mode="eco")
+    attributes = thermostat(hass).attributes
+    assert (attributes["target_temp_low"], attributes["target_temp_high"]) == (19, 24)
+
+
+async def test_heating_preset_doesnt_become_cooling_target(hass: HomeAssistant) -> None:
+    """With only away_temp_heater, switching to cool while away cools to your own target."""
+    await async_setup_thermostat(hass, temperature=20, target_temp=22, away_temp_heater=16)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    await async_call(hass, "set_preset_mode", preset_mode="away")
+    await async_call(hass, "set_hvac_mode", hvac_mode="cool")
+    assert thermostat(hass).attributes["temperature"] == 22
+    assert devices_on(hass) == set()

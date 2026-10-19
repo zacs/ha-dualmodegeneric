@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.0b3
+
+New options, all optional and available in the UI and in YAML. Existing configurations don't change.
+
+- **Fan modes (#11).** With `fan_with: heater` (or `cooler`, or both), the thermostat gets a fan mode selector. Auto runs the fan whenever those devices run, plus an optional `fan_off_delay`; On runs it all the time; Off leaves it alone.
+- **More presets:** comfort, eco, home, sleep and activity join away. Each takes `<preset>_temp`, plus `_heater` and `_cooler` variants that set the range in Heat/cool, like away does.
+- **`max_cycle_duration` and `cycle_cooldown`**, as in the built-in thermostat: stop a device after it has run this long, and let it rest this long before starting again.
+- **Separate heater and cooler tolerances (#37):** `heater_cold_tolerance`, `heater_hot_tolerance`, `cooler_cold_tolerance` and `cooler_hot_tolerance` override the shared tolerances for one device. `heater_hot_tolerance: 0` stops heating right at the target, which #83 asked about.
+- **`tamper_entity`:** while it's on, everything is kept off, like consent but the other way round. Unavailable doesn't block. Use it for window sensors.
+- **Water temperature guard** for hydronic systems: heating waits until the supply water is hot enough, cooling until it's cold enough. Uses the option names from #88, so its users can switch over.
+
+Fixes to earlier behavior:
+- Granting consent no longer skips `min_cycle_duration`, so a consent entity that flaps can't short-cycle a compressor. Revoking it still stops everything at once.
+- A preset that has no temperature for the current mode now uses your own target. With only `away_temp_heater`, switching to cool while away used to cool to the away heating temperature.
+- A device that briefly goes unavailable and comes back in the same state no longer restarts its `min_cycle_duration`.
+
+UI:
+- A new **Interlocks** step holds consent, tamper and the water guard. **Away and consent** became **Presets**.
+- Presets, the separate tolerances and the water guard are collapsible sections.
+
 ## 1.0.0b2
 
 **Set up thermostats from the UI.** Go to *Settings → Devices & services → Helpers → Create helper → Multi-Mode Generic Thermostat*. YAML keeps working unchanged alongside it. Existing YAML thermostats aren't imported, so nothing moves unless you recreate it yourself.

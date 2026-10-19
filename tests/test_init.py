@@ -2,12 +2,14 @@
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.translation import async_get_translations
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -83,42 +85,53 @@ async def test_diagnostics(hass: HomeAssistant) -> None:
     assert diagnostics["sources"]["heater"]["state"] == "off"
 
 
+def _assert_fields_have_text(schema: vol.Schema, text: dict, where: str) -> None:
+    for key, value in schema.schema.items():
+        name = str(key)
+        if isinstance(value, section):
+            assert text["sections"][name]["name"], f"{where}.{name} section name"
+            _assert_fields_have_text(value.schema, text["sections"][name], f"{where}.{name}")
+            continue
+        assert name in text["data"], f"{where}.{name} label"
+        if name != "name":
+            assert name in text["data_description"], f"{where}.{name} description"
+
+
 def test_every_form_field_has_text() -> None:
-    """Each field of each step has a label and a description in English."""
+    """Each field of each step, in sections too, has a label and a description in English."""
 
     # Every optional field shows when all devices and heat_cool are configured;
     # the schema builders only read handler.options.
     handler = SimpleNamespace(
         options={"heater": "a", "cooler": "b", "fan": "c", "dryer": "d", "enable_heat_cool": True}
     )
-    for section, flow in (
+    for flow_name, flow in (
         ("config", config_flow.CONFIG_FLOW),
         ("options", config_flow.OPTIONS_FLOW),
     ):
-        steps = TRANSLATIONS[section]["step"]
+        steps = TRANSLATIONS[flow_name]["step"]
         for step_id, step in flow.items():
-            assert step_id in steps, f"{section}.{step_id} has no text"
+            assert step_id in steps, f"{flow_name}.{step_id} has no text"
             schema = getattr(step, "schema", None)
             if schema is None:
+                assert set(steps[step_id]["menu_options"]) == {
+                    "devices",
+                    "behavior",
+                    "settings",
+                    "presets",
+                    "interlocks",
+                }
                 continue
             if not isinstance(schema, vol.Schema):
                 schema = asyncio.run(schema(handler))
-            for key in schema.schema:
-                name = str(key)
-                assert name in steps[step_id]["data"], f"{section}.{step_id}.{name} label"
-                if name != "name":
-                    assert name in steps[step_id]["data_description"], (
-                        f"{section}.{step_id}.{name} description"
-                    )
+            _assert_fields_have_text(schema, steps[step_id], f"{flow_name}.{step_id}")
 
 
 def test_errors_and_exceptions_have_text() -> None:
     """Every error the flow raises and every exception key has English text."""
     source = (Path(config_flow.__file__)).read_text()
-    for error in ("no_devices", "min_max_temp", "target_range", "zero_duration"):
-        assert f'"{error}"' in source
-        assert error in TRANSLATIONS["config"]["error"]
-        assert error in TRANSLATIONS["options"]["error"]
+    raised = set(re.findall(r'SchemaFlowError\("(\w+)"\)', source))
+    assert raised == set(TRANSLATIONS["config"]["error"]) == set(TRANSLATIONS["options"]["error"])
     climate_source = (Path(config_flow.__file__).parent / "climate.py").read_text()
     for key in TRANSLATIONS["exceptions"]:
         assert f'translation_key="{key}"' in climate_source

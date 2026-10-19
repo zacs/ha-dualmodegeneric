@@ -8,7 +8,7 @@ decisions (timing, shared entities, service calls) is the climate entity's job.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from homeassistant.components.climate import HVACMode
@@ -71,6 +71,14 @@ class Snapshot:
     dryer_behavior: Behavior
     configured: frozenset[Role]
     running: frozenset[Role]
+    # (cold, hot) tolerances for a device, overriding the shared ones.
+    role_tolerances: Mapping[Role, tuple[float, float]] = field(default_factory=dict)
+    # Devices that must stay off whatever the temperature (the water guard).
+    blocked: frozenset[Role] = frozenset()
+
+    def tolerances(self, role: Role) -> tuple[float, float]:
+        """Return a device's (cold, hot) tolerances."""
+        return self.role_tolerances.get(role, (self.cold_tolerance, self.hot_tolerance))
 
 
 def decide(snapshot: Snapshot) -> dict[Role, bool]:
@@ -83,13 +91,17 @@ def decide(snapshot: Snapshot) -> dict[Role, bool]:
     for role in MODE_ROLES[snapshot.mode]:
         if role not in snapshot.configured:
             continue
+        if role in snapshot.blocked:
+            desired[role] = False
+            continue
+        cold_tolerance, hot_tolerance = snapshot.tolerances(role)
         wants = _wants_on(
             role_demand(role, snapshot.fan_behavior, snapshot.dryer_behavior),
             running=role in snapshot.running,
             current=snapshot.current,
             setpoint=_setpoint(role, snapshot),
-            cold_tolerance=snapshot.cold_tolerance,
-            hot_tolerance=snapshot.hot_tolerance,
+            cold_tolerance=cold_tolerance,
+            hot_tolerance=hot_tolerance,
         )
         if wants is not None:
             desired[role] = wants
