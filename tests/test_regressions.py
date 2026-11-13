@@ -574,3 +574,22 @@ async def test_handed_over_device_not_powered_off(hass: HomeAssistant) -> None:
     # Switching everything off still switches it off.
     await async_call(hass, "set_hvac_mode", hvac_mode="off")
     assert devices_on(hass) == set()
+
+
+# --- Fixed after 1.0 --------------------------------------------------------
+@pytest.mark.parametrize("report", ["unavailable", "unknown"])
+async def test_device_unreported_with_nothing_requested(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture, report: str
+) -> None:
+    """A device reported unavailable or unknown with no command waiting doesn't raise KeyError."""
+    await async_setup_thermostat(hass, temperature=21, target_temp=20)
+    await async_call(hass, "set_hvac_mode", hvac_mode="heat")
+    hass.states.async_set(HEATER, report)
+    await hass.async_block_till_done()
+    assert "KeyError" not in caplog.text
+
+    # Once it's back, it's controlled as usual.
+    hass.states.async_set(HEATER, "off")
+    await hass.async_block_till_done()
+    await async_set_temperature(hass, 19)
+    assert is_on(hass, HEATER)

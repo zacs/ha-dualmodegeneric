@@ -714,7 +714,7 @@ class DualModeGenericThermostat(ClimateEntity, RestoreEntity):
         # command landing, so the command stays in flight until it's reached.
         if (pending := self._pending.get(entity_id)) is not None and pending[0] is reached:
             del self._pending[entity_id]
-        if self._requested.get(entity_id) is reached:
+        if reached is not None and self._requested.get(entity_id) is reached:
             del self._requested[entity_id]
         changed = old_state is None or old_state.state != new_state.state
         if changed:
