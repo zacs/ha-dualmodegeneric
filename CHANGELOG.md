@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- No `KeyError` in the log when a device goes unavailable or unknown with no command waiting for it, for example while Home Assistant starts. Before, it was logged once per device at every startup.
+
 ## 1.0.0
 
 The first stable release: the thermostat rewritten for current Home Assistant, with the same YAML configuration, plus UI setup and new options. **Upgrading from 0.2.x needs no configuration changes**, and your mode, targets and preset carry over. Requires Home Assistant 2026.4 or newer.
